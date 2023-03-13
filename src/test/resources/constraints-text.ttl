@@ -21,4 +21,18 @@
   mathrl:expressionString
   "(@a + @b + @c) / 2" ] .
 
+:Rectangle a owl:Class ; mathrl:constraint
+  [ a mathrl:Constraint ; sh:prefixes : ;
+    mathrl:onProperty :area ;
+    mathrl:expressionString
+    "@a * @b" ] .
+
+:ShapeCollection a owl:Class ; mathrl:constraint
+[ a mathrl:Constraint ; sh:prefixes : ;
+  mathrl:onProperty :area ;
+  mathrl:expressionString
+  "sum(@@shape, $s -> @area($s))" ] .
+
+:shapes a :ShapeCollection ; :shape :t1, :r1 .
 :t1 a :Triangle ; :a 2 ; :b 2 ; :c 2 .
+:r1 a :Rectangle ; :a 4 ; :b 2 .

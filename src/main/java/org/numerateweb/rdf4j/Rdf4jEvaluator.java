@@ -1,5 +1,6 @@
 package org.numerateweb.rdf4j;
 
+import net.enilink.commons.iterator.IExtendedIterator;
 import net.enilink.commons.util.Pair;
 import net.enilink.komma.core.IReference;
 import net.enilink.komma.core.URI;
@@ -101,6 +102,17 @@ public class Rdf4jEvaluator extends SimpleEvaluator {
 			}
 		} catch (NoSuchElementException nse) {
 			return result(null);
+		}
+	}
+
+	@Override
+	protected Object getPropertyValue(Object subject, IReference property) {
+		try (IExtendedIterator<?> it = modelAccess.getPropertyValues(subject, property, Optional.empty())) {
+			if (!it.hasNext()) {
+				return null;
+			} else {
+				return it.toList();
+			}
 		}
 	}
 
