@@ -22,10 +22,10 @@
   "(@a + @b + @c) / 2" ] .
 
 :Rectangle a owl:Class ; mathrl:constraint
-  [ a mathrl:Constraint ; sh:prefixes : ;
-    mathrl:onProperty :area ;
-    mathrl:expressionString
-    "@a * @b" ] .
+[ a mathrl:Constraint ; sh:prefixes : ;
+  mathrl:onProperty :area ;
+  mathrl:expressionString
+  "@a * @b" ] .
 
 :ShapeCollection a owl:Class ; mathrl:constraint
 [ a mathrl:Constraint ; sh:prefixes : ;

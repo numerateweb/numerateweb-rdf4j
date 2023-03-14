@@ -57,11 +57,13 @@ public class NumerateWebInferencerConnection extends InferencerConnectionWrapper
 	// Called by base sail
 	@Override
 	public void statementAdded(Statement st) {
+		sail.update(st, true);
 	}
 
 	// Called by base sail
 	@Override
 	public void statementRemoved(Statement st) {
+		sail.update(st, false);
 	}
 
 	@Override
@@ -97,6 +99,6 @@ public class NumerateWebInferencerConnection extends InferencerConnectionWrapper
 	}
 
 	protected void doInferencing() throws SailException {
-		sail.doInitialInferencing(this);
+		sail.reevaluate(this);
 	}
 }

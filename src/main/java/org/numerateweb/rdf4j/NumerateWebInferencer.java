@@ -21,6 +21,7 @@ import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.transaction.IsolationLevel;
 import org.eclipse.rdf4j.common.transaction.IsolationLevels;
 import org.eclipse.rdf4j.model.Resource;
+import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.Dataset;
@@ -66,6 +67,8 @@ public class NumerateWebInferencer extends NotifyingSailWrapper {
 	protected Map<Resource, Rdf4jEvaluator> evaluators = new HashMap<>();
 	protected boolean initialInferencingDone = false;
 
+	protected ThreadLocal<SailConnection> connection = new ThreadLocal<>();
+
 	/*--------------*
 	 * Constructors *
 	 *--------------*/
@@ -98,21 +101,33 @@ public class NumerateWebInferencer extends NotifyingSailWrapper {
 		return new NumerateWebInferencerConnection(this, (InferencerConnection) super.getConnection());
 	}
 
-	public void doInitialInferencing(NotifyingSailConnection connection) {
-		if (!initialInferencingDone) {
-			doFullInferencing(connection);
-			initialInferencingDone = true;
+	void update(Statement stmt, boolean added) {
+		if (! evaluators.isEmpty()) {
+			Rdf4jEvaluator evaluator = evaluators.get(stmt.getContext());
+			if (evaluator != null) {
+				evaluator.invalidate(stmt.getSubject(), valueConverter.fromRdf4j(stmt.getPredicate()));
+			}
 		}
 	}
 
-	public void doFullInferencing(NotifyingSailConnection connection) {
+	public void reevaluate(SailConnection connection) {
+		if (!initialInferencingDone) {
+			doFullInferencing(connection);
+			initialInferencingDone = true;
+		} else {
+			this.connection.set(connection);
+			evaluators.values().forEach(e -> e.reevaluate());
+		}
+	}
+
+	public void doFullInferencing(SailConnection connection) {
 		SimpleDataset dataset = new SimpleDataset();
 		boolean closeConnection = false;
 		if (connection == null) {
 			connection = getConnection();
 			closeConnection = true;
 		}
-		final NotifyingSailConnection theConnection = connection;
+		this.connection.set(connection);
 		try {
 			BindingSet bindingSet = new ListBindingSet(List.of(), List.of());
 			try (CloseableIteration<? extends BindingSet, QueryEvaluationException> bindingsIter = connection
@@ -125,7 +140,7 @@ public class NumerateWebInferencer extends NotifyingSailWrapper {
 					Rdf4jEvaluator evaluator = evaluators.computeIfAbsent(targetGraph, graph -> {
 						CacheManager cacheManager = new CacheManager(new GuavaCacheFactory());
 						// TODO use thread-local connection or something like that
-						Supplier<SailConnection> connSupplier = () -> theConnection;
+						Supplier<SailConnection> connSupplier = () -> this.connection.get();
 						Supplier<Dataset> datasetSupplier = () -> dataset;
 						Rdf4jModelAccess modelAccess = new Rdf4jModelAccess(literalConverter,
 								getValueFactory(), connSupplier, datasetSupplier, cacheManager);

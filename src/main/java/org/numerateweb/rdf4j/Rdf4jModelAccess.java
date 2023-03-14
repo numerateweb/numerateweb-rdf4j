@@ -38,6 +38,7 @@ import org.parboiled.support.ParsingResult;
 
 import java.util.*;
 import java.util.function.Supplier;
+import java.util.stream.Collectors;
 
 public class Rdf4jModelAccess implements IModelAccess {
 	protected static final String MATH_OBJECT_QUERY = new StringBuilder()
@@ -182,6 +183,8 @@ public class Rdf4jModelAccess implements IModelAccess {
 	}
 
 	protected List<Resource> getDirectClasses(Resource resource) {
+		return connection.get().getStatements(resource, RDF.TYPE, null, false).stream().filter(r -> r instanceof Resource).map(r -> (Resource) r).collect(Collectors.toList());
+		/*
 		Set<Resource> classes = new HashSet<>();
 		BindingSet bindingSet = new ListBindingSet(List.of("resource"), List.of(resource));
 		try (CloseableIteration<? extends BindingSet, QueryEvaluationException> bindingsIter = connection.get()
@@ -191,7 +194,7 @@ public class Rdf4jModelAccess implements IModelAccess {
 				classes.add((Resource) bindings.getValue("class"));
 			}
 		}
-		return new ArrayList<>(classes);
+		return new ArrayList<>(classes);*/
 	}
 
 	protected List<Resource> getDirectSuperClasses(Resource clazz) {
@@ -357,6 +360,6 @@ public class Rdf4jModelAccess implements IModelAccess {
 	}
 
 	public void setPropertyValue(Object subject, IReference property, List<Object> results) {
-		System.out.println(String.format("%s: %s = %s", subject, property, results));
+		//System.out.println(String.format("%s: %s = %s", subject, property, results));
 	}
 }

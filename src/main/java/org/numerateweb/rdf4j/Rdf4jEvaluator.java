@@ -18,7 +18,7 @@ import java.util.stream.Collectors;
 public class Rdf4jEvaluator extends SimpleEvaluator {
 
 	protected final static Logger logger = LoggerFactory.getLogger(Rdf4jEvaluator.class);
-	protected DependencyGraph<Object> dependencyGraph;
+	protected DependencyGraph<Pair<Object, IReference>> dependencyGraph;
 	protected Map<Class<?>, Function<Object, Collection<String>>> ignoreLookup = new HashMap<>();
 	protected Map<Pair<Object, IReference>, List<Object>> propertiesToManagedInstances = new HashMap<>();
 
@@ -116,16 +116,11 @@ public class Rdf4jEvaluator extends SimpleEvaluator {
 		}
 	}
 
-	public void invalidate(Object subject, IReference property) {
-		invalidate(subject, property, false);
-	}
+	final Collection<Pair<Object, IReference>> invalidatedRoots = new ArrayList<>();
+	final Set<Object> invalidatedInstances = new HashSet<>();
 
-	public void invalidate(Object subject, IReference property, boolean reevaluate) {
-		Collection<Pair<Object, IReference>> invalidatedRoots = new ArrayList<>();
-		Set<Object> invalidatedInstances = new HashSet<>();
-		dependencyGraph.invalidate(new Pair<>(subject, property), (obj, isRoot) -> {
-			@SuppressWarnings("unchecked")
-			Pair<Object, IReference> pair = (Pair<Object, IReference>) obj;
+	public void invalidate(Object subject, IReference property) {
+		dependencyGraph.invalidate(new Pair<>(subject, property), (pair, isRoot) -> {
 			logger.trace("CB: invalidating {}", pair);
 			valueCache.remove(pair);
 			if (isRoot) {
@@ -140,6 +135,9 @@ public class Rdf4jEvaluator extends SimpleEvaluator {
 			});
 			return null;
 		});
+	}
+
+	public void reevaluate() {
 		// remove computations for invalidated instances from dependency graph
 		Collection<Pair<Object, IReference>> rootsForReevaluation = invalidatedRoots.stream().filter(root -> {
 			if (invalidatedInstances.contains(root.getFirst())) {
@@ -150,16 +148,15 @@ public class Rdf4jEvaluator extends SimpleEvaluator {
 				return true;
 			}
 		}).collect(Collectors.toList());
-
-		if (reevaluate) {
-			for (Pair<Object, IReference> pair : rootsForReevaluation) {
-				logger.trace("re-evaluating {}", pair);
-				try {
-					evaluateRoot(pair.getFirst(), pair.getSecond(), Optional.empty());
-				} catch (Exception e) {
-					logger.error(e.getMessage());
-				}
+		for (Pair<Object, IReference> pair : rootsForReevaluation) {
+			logger.trace("re-evaluating {}", pair);
+			try {
+				evaluateRoot(pair.getFirst(), pair.getSecond(), Optional.empty());
+			} catch (Exception e) {
+				logger.error(e.getMessage());
 			}
 		}
+		invalidatedRoots.clear();
+		invalidatedInstances.clear();
 	}
 }
