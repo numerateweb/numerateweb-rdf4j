@@ -18,11 +18,12 @@ import org.eclipse.rdf4j.query.Dataset;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.QueryLanguage;
 import org.eclipse.rdf4j.query.impl.ListBindingSet;
-import org.eclipse.rdf4j.query.impl.MapBindingSet;
 import org.eclipse.rdf4j.query.parser.ParsedQuery;
 import org.eclipse.rdf4j.query.parser.QueryParserUtil;
 import org.eclipse.rdf4j.sail.SailConnection;
 import org.eclipse.rdf4j.sail.SailException;
+import org.eclipse.rdf4j.sail.helpers.SailConnectionWrapper;
+import org.eclipse.rdf4j.sail.inferencer.InferencerConnection;
 import org.numerateweb.math.model.OMObject;
 import org.numerateweb.math.model.OMObjectBuilder;
 import org.numerateweb.math.ns.INamespaces;
@@ -39,6 +40,7 @@ import org.parboiled.support.ParsingResult;
 import java.util.*;
 import java.util.function.Supplier;
 import java.util.stream.Collectors;
+import java.util.stream.Stream;
 
 public class Rdf4jModelAccess implements IModelAccess {
 	protected static final String MATH_OBJECT_QUERY = new StringBuilder()
@@ -101,17 +103,14 @@ public class Rdf4jModelAccess implements IModelAccess {
 	protected static final ParsedQuery instancesQuery = QueryParserUtil.parseQuery(QueryLanguage.SPARQL, SELECT_INSTANCES,
 			null);
 	protected final ValueFactory valueFactory;
-	private final ParsedQuery propertyValuesQuery = QueryParserUtil.parseQuery(QueryLanguage.SPARQL,
-			"SELECT DISTINCT ?value WHERE { ?subject ?property ?value }", null);
-	private final ParsedQuery propertyValuesQueryWRestriction = QueryParserUtil.parseQuery(QueryLanguage.SPARQL,
-			"SELECT DISTINCT ?value WHERE { ?subject ?property ?value . ?value a ?restriction }", null);
 	private final ParsedQuery namespacesQuery = QueryParserUtil.parseQuery(QueryLanguage.SPARQL, PREFIX +
 			"SELECT DISTINCT ?prefix ?namespace WHERE { ?resource sh:prefixes/owl:imports*/sh:declare [ sh:prefix ?prefix ; sh:namespace ?namespace ] }", null);
 	private final Supplier<SailConnection> connection;
 	private final Supplier<Dataset> dataset;
 	private final RDF4JValueConverter valueConverter;
 	private final LiteralConverter literalConverter;
-	public ICache<Pair<Resource, IReference>, ResultSpec<OMObject>> expressionCache;
+	ICache<Pair<Resource, IReference>, ResultSpec<OMObject>> classToExpression;
+	ICache<Resource, List<Resource>> resourceTypes;
 
 	public Rdf4jModelAccess(LiteralConverter literalConverter, ValueFactory valueFactory,
 	                        Supplier<SailConnection> connection, Supplier<Dataset> dataset,
@@ -121,9 +120,12 @@ public class Rdf4jModelAccess implements IModelAccess {
 		this.connection = connection;
 		this.dataset = dataset;
 		this.valueConverter = new RDF4JValueConverter(valueFactory);
-		this.expressionCache = cacheManager.get(new TypeLiteral<>() {
+		this.classToExpression = cacheManager.get(new TypeLiteral<>() {
+		});
+		this.resourceTypes = cacheManager.get(new TypeLiteral<>() {
 		});
 	}
+
 
 	private static final String SELECT_DIRECT_CLASSES(boolean named) {
 		return PREFIX //
@@ -178,23 +180,22 @@ public class Rdf4jModelAccess implements IModelAccess {
 	}
 
 	private ResultSpec<OMObject> cacheExpression(Resource clazz, IReference property, ResultSpec<OMObject> result) {
-		expressionCache.put(new Pair<>(clazz, property), result);
+		classToExpression.put(new Pair<>(clazz, property), result);
 		return result;
 	}
 
 	protected List<Resource> getDirectClasses(Resource resource) {
-		return connection.get().getStatements(resource, RDF.TYPE, null, false).stream().filter(r -> r instanceof Resource).map(r -> (Resource) r).collect(Collectors.toList());
-		/*
-		Set<Resource> classes = new HashSet<>();
-		BindingSet bindingSet = new ListBindingSet(List.of("resource"), List.of(resource));
-		try (CloseableIteration<? extends BindingSet, QueryEvaluationException> bindingsIter = connection.get()
-				.evaluate(directClassesQuery.getTupleExpr(), dataset.get(), bindingSet, false)) {
-			while (bindingsIter.hasNext()) {
-				BindingSet bindings = bindingsIter.next();
-				classes.add((Resource) bindings.getValue("class"));
-			}
+		CacheResult<List<Resource>> result = resourceTypes.get(resource);
+		if (result != null) {
+			return result.value;
 		}
-		return new ArrayList<>(classes);*/
+		List<Resource> types = ((SailConnectionWrapper) connection.get()).getWrappedConnection().
+				getStatements(resource, RDF.TYPE, null, false)
+				.stream().map(org.eclipse.rdf4j.model.Statement::getObject)
+				.filter(r -> r instanceof Resource).map(r -> (Resource) r)
+				.collect(Collectors.toList());
+		resourceTypes.put(resource, types);
+		return types;
 	}
 
 	protected List<Resource> getDirectSuperClasses(Resource clazz) {
@@ -213,15 +214,17 @@ public class Rdf4jModelAccess implements IModelAccess {
 	@Override
 	public ResultSpec<OMObject> getExpressionSpec(Object subject, IReference property) {
 		Resource subjectResource = (Resource) subject;
+		Pair<Resource, IReference> resourceKey = new Pair<>(subjectResource, property);
 		for (Resource clazz : sort(getDirectClasses(subjectResource))) {
 			Pair<Resource, IReference> key = new Pair<>(clazz, property);
-			CacheResult<ResultSpec<OMObject>> cacheResult = expressionCache.get(key);
+			CacheResult<ResultSpec<OMObject>> cacheResult = classToExpression.get(key);
 			if (cacheResult != null) {
 				return cacheResult.value;
 			}
 			OMObject constraint = getConstraint(clazz, property);
 			if (constraint != null) {
-				return cacheExpression(clazz, property, ResultSpec.create(Cardinality.SINGLE, constraint));
+				ResultSpec<OMObject> resultSpec = ResultSpec.create(Cardinality.SINGLE, constraint);
+				return cacheExpression(clazz, property, resultSpec);
 			} else {
 				// cache but do not return
 				cacheExpression(clazz, property, ResultSpec.create(Cardinality.NONE, null));
@@ -249,7 +252,7 @@ public class Rdf4jModelAccess implements IModelAccess {
 		if (constraintResource == null) {
 			for (Resource superClass : sort(getDirectSuperClasses(clazz))) {
 				Pair<Resource, IReference> key = new Pair<>(clazz, property);
-				CacheResult<ResultSpec<OMObject>> cacheResult = expressionCache.get(key);
+				CacheResult<ResultSpec<OMObject>> cacheResult = classToExpression.get(key);
 				if (cacheResult != null) {
 					return cacheResult.value.result;
 				}
@@ -322,36 +325,15 @@ public class Rdf4jModelAccess implements IModelAccess {
 	@Override
 	public IExtendedIterator<?> getPropertyValues(Object subject, IReference property,
 	                                              Optional<IReference> restriction) {
-		ParsedQuery query;
-		// DISTINCT is required to suppress duplicates due to explicit and
-		// inferred statements
+		SailConnection baseConn = ((SailConnectionWrapper) connection.get()).getWrappedConnection();
+		Stream<? extends org.eclipse.rdf4j.model.Statement> stmts = baseConn.getStatements((Resource) subject,
+				(IRI) valueConverter.toRdf4j(property), null, false).stream();
 		if (restriction.isPresent()) {
-			query = propertyValuesQueryWRestriction;
-		} else {
-			query = propertyValuesQuery;
+			Resource restrictionResource = valueConverter.toRdf4j(restriction.get());
+			stmts = stmts.filter(stmt -> stmt.getObject().isLiteral() ? true :
+					baseConn.hasStatement((Resource) stmt.getObject(), RDF.TYPE, restrictionResource, true));
 		}
-
-		MapBindingSet bindingSet = new MapBindingSet();
-		bindingSet.setBinding("subject", (Resource) subject);
-		bindingSet.setBinding("property", valueConverter.toRdf4j(property));
-		restriction.ifPresent(r -> {
-			bindingSet.setBinding("restriction", valueConverter.toRdf4j(r));
-		});
-		List<Object> values = new ArrayList<>();
-		try (CloseableIteration<? extends BindingSet, QueryEvaluationException> bindingsIter = connection.get()
-				.evaluate(query.getTupleExpr(), dataset.get(), bindingSet, false)) {
-			while (bindingsIter.hasNext()) {
-				BindingSet bindings = bindingsIter.next();
-				Value value = bindings.getValue("value");
-				if (value.isLiteral()) {
-					// convert literals to Java objects
-					values.add(literalConverter.createObject((ILiteral) valueConverter.fromRdf4j(value)));
-				} else {
-					values.add(value);
-				}
-			}
-		}
-		return WrappedIterator.create(values.iterator());
+		return WrappedIterator.create(stmts.map(stmt -> stmt.getObject()).collect(Collectors.toList()).iterator());
 	}
 
 	protected List<Resource> sort(List<Resource> classes) {
@@ -360,6 +342,21 @@ public class Rdf4jModelAccess implements IModelAccess {
 	}
 
 	public void setPropertyValue(Object subject, IReference property, List<Object> results) {
+		((InferencerConnection) connection.get()).removeInferredStatement((Resource) subject,
+				(IRI) valueConverter.toRdf4j(property), null);
+		if (!results.isEmpty()) {
+			Object value = results.get(0);
+			Value rdfValue;
+			if (value instanceof Resource) {
+				rdfValue = (Resource) value;
+			} else if (value instanceof IValue) {
+				rdfValue = valueConverter.toRdf4j((IValue) value);
+			} else {
+				rdfValue = valueConverter.toRdf4j(literalConverter.createLiteral(value, null));
+			}
+			((InferencerConnection) connection.get()).addInferredStatement((Resource) subject,
+					(IRI) valueConverter.toRdf4j(property), rdfValue);
+		}
 		//System.out.println(String.format("%s: %s = %s", subject, property, results));
 	}
 }

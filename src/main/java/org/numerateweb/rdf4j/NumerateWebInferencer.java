@@ -23,6 +23,7 @@ import org.eclipse.rdf4j.common.transaction.IsolationLevels;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.ValueFactory;
+import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.Dataset;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
@@ -45,6 +46,7 @@ import org.numerateweb.math.util.SparqlUtils;
 
 import java.util.*;
 import java.util.function.Supplier;
+import java.util.stream.Collectors;
 
 public class NumerateWebInferencer extends NotifyingSailWrapper {
 
@@ -68,6 +70,7 @@ public class NumerateWebInferencer extends NotifyingSailWrapper {
 	protected boolean initialInferencingDone = false;
 
 	protected ThreadLocal<SailConnection> connection = new ThreadLocal<>();
+	volatile boolean inferencing = false;
 
 	/*--------------*
 	 * Constructors *
@@ -102,7 +105,10 @@ public class NumerateWebInferencer extends NotifyingSailWrapper {
 	}
 
 	void update(Statement stmt, boolean added) {
-		if (! evaluators.isEmpty()) {
+		if (inferencing) {
+			return;
+		}
+		if (!evaluators.isEmpty()) {
 			Rdf4jEvaluator evaluator = evaluators.get(stmt.getContext());
 			if (evaluator != null) {
 				evaluator.invalidate(stmt.getSubject(), valueConverter.fromRdf4j(stmt.getPredicate()));
@@ -111,47 +117,41 @@ public class NumerateWebInferencer extends NotifyingSailWrapper {
 	}
 
 	public void reevaluate(SailConnection connection) {
-		if (!initialInferencingDone) {
-			doFullInferencing(connection);
-			initialInferencingDone = true;
-		} else {
+		try {
+			inferencing = true;
+
 			this.connection.set(connection);
-			evaluators.values().forEach(e -> e.reevaluate());
+			if (!initialInferencingDone) {
+				doFullInferencing(connection);
+				initialInferencingDone = true;
+			} else {
+				evaluators.values().forEach(e -> e.reevaluate());
+			}
+		} finally {
+			inferencing = false;
 		}
 	}
 
 	public void doFullInferencing(SailConnection connection) {
 		SimpleDataset dataset = new SimpleDataset();
-		boolean closeConnection = false;
-		if (connection == null) {
-			connection = getConnection();
-			closeConnection = true;
-		}
-		this.connection.set(connection);
-		try {
-			BindingSet bindingSet = new ListBindingSet(List.of(), List.of());
-			try (CloseableIteration<? extends BindingSet, QueryEvaluationException> bindingsIter = connection
-					.evaluate(targetsQuery.getTupleExpr(), dataset, bindingSet, false)) {
-				while (bindingsIter.hasNext()) {
-					BindingSet bindings = bindingsIter.next();
-					Resource instance = (Resource) bindings.getValue("instance");
-					Resource property = (Resource) bindings.getValue("property");
-					Resource targetGraph = (Resource) bindings.getValue("targetGraph");
-					Rdf4jEvaluator evaluator = evaluators.computeIfAbsent(targetGraph, graph -> {
-						CacheManager cacheManager = new CacheManager(new GuavaCacheFactory());
-						// TODO use thread-local connection or something like that
-						Supplier<SailConnection> connSupplier = () -> this.connection.get();
-						Supplier<Dataset> datasetSupplier = () -> dataset;
-						Rdf4jModelAccess modelAccess = new Rdf4jModelAccess(literalConverter,
-								getValueFactory(), connSupplier, datasetSupplier, cacheManager);
-						return new Rdf4jEvaluator(modelAccess, cacheManager);
-					});
-					evaluator.evaluateRoot(instance, valueConverter.fromRdf4j(property), Optional.empty());
-				}
-			}
-		} finally {
-			if (closeConnection) {
-				connection.close();
+		BindingSet bindingSet = new ListBindingSet(List.of(), List.of());
+		try (CloseableIteration<? extends BindingSet, QueryEvaluationException> bindingsIter = connection
+				.evaluate(targetsQuery.getTupleExpr(), dataset, bindingSet, false)) {
+			while (bindingsIter.hasNext()) {
+				BindingSet bindings = bindingsIter.next();
+				Resource instance = (Resource) bindings.getValue("instance");
+				Resource property = (Resource) bindings.getValue("property");
+				Resource targetGraph = (Resource) bindings.getValue("targetGraph");
+				Rdf4jEvaluator evaluator = evaluators.computeIfAbsent(targetGraph, graph -> {
+					CacheManager cacheManager = new CacheManager(new GuavaCacheFactory());
+					// TODO use thread-local connection or something like that
+					Supplier<SailConnection> connSupplier = () -> this.connection.get();
+					Supplier<Dataset> datasetSupplier = () -> dataset;
+					Rdf4jModelAccess modelAccess = new Rdf4jModelAccess(literalConverter,
+							getValueFactory(), connSupplier, datasetSupplier, cacheManager);
+					return new Rdf4jEvaluator(modelAccess, cacheManager);
+				});
+				evaluator.evaluateRoot(instance, valueConverter.fromRdf4j(property), Optional.empty());
 			}
 		}
 	}

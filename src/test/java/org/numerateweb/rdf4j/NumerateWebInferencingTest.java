@@ -1,5 +1,7 @@
 package org.numerateweb.rdf4j;
 
+import org.apache.commons.io.FileUtils;
+import org.assertj.core.util.Files;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
@@ -7,16 +9,30 @@ import org.eclipse.rdf4j.repository.Repository;
 import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.rio.RDFFormat;
-import org.eclipse.rdf4j.sail.memory.MemoryStore;
+import org.eclipse.rdf4j.sail.lmdb.LmdbStore;
+import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
+import org.junit.After;
 import org.junit.Test;
 
+import java.io.File;
 import java.io.IOException;
 import java.util.Random;
 
 public class NumerateWebInferencingTest {
+	File file;
+
 	protected NumerateWebInferencer createSail() {
-		NumerateWebInferencer sailStack = new NumerateWebInferencer(new MemoryStore());
+		file = Files.newTemporaryFolder();
+		LmdbStoreConfig config = new LmdbStoreConfig("spoc,ospc,psoc");
+		config.setForceSync(false);
+		LmdbStore store = new LmdbStore(file, config);
+		NumerateWebInferencer sailStack = new NumerateWebInferencer(store);
 		return sailStack;
+	}
+
+	@After
+	public void cleanup() throws IOException {
+		FileUtils.deleteDirectory(file);
 	}
 
 	@Test
@@ -65,5 +81,7 @@ public class NumerateWebInferencingTest {
 
 			System.out.println("Update took: " + (System.currentTimeMillis() - start));
 		}
+
+		repository.shutDown();
 	}
 }
