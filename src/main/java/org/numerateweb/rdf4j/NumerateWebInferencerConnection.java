@@ -57,13 +57,13 @@ public class NumerateWebInferencerConnection extends InferencerConnectionWrapper
 	// Called by base sail
 	@Override
 	public void statementAdded(Statement st) {
-		sail.update(st, true);
+		sail.update(this, st, true);
 	}
 
 	// Called by base sail
 	@Override
 	public void statementRemoved(Statement st) {
-		sail.update(st, false);
+		sail.update(this, st, false);
 	}
 
 	@Override

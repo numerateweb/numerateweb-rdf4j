@@ -7,24 +7,20 @@ import net.enilink.komma.core.URI;
 import org.numerateweb.math.eval.SimpleEvaluator;
 import org.numerateweb.math.model.OMObject;
 import org.numerateweb.math.reasoner.CacheManager;
-import org.numerateweb.math.reasoner.DependencyGraph;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.util.*;
 import java.util.function.Function;
-import java.util.stream.Collectors;
 
 public class Rdf4jEvaluator extends SimpleEvaluator {
 
 	protected final static Logger logger = LoggerFactory.getLogger(Rdf4jEvaluator.class);
-	protected DependencyGraph<Pair<Object, IReference>> dependencyGraph;
 	protected Map<Class<?>, Function<Object, Collection<String>>> ignoreLookup = new HashMap<>();
 	protected Map<Pair<Object, IReference>, List<Object>> propertiesToManagedInstances = new HashMap<>();
 
 	public Rdf4jEvaluator(Rdf4jModelAccess modelAccess, CacheManager cacheManager) {
 		super(modelAccess, cacheManager);
-		dependencyGraph = new DependencyGraph<>();
 	}
 
 	@Override
@@ -43,7 +39,7 @@ public class Rdf4jEvaluator extends SimpleEvaluator {
 	@Override
 	protected void recordDependency(Pair<Object, IReference> from, Pair<Object, IReference> to) {
 		logger.trace("adding dependency {} -> {}", from, to);
-		dependencyGraph.addDependency(from, to);
+		((Rdf4jModelAccess) modelAccess).addDependency(from, to);
 	}
 
 	/**
@@ -116,47 +112,11 @@ public class Rdf4jEvaluator extends SimpleEvaluator {
 		}
 	}
 
-	final Collection<Pair<Object, IReference>> invalidatedRoots = new ArrayList<>();
-	final Set<Object> invalidatedInstances = new HashSet<>();
-
-	public void invalidate(Object subject, IReference property) {
-		dependencyGraph.invalidate(new Pair<>(subject, property), (pair, isRoot) -> {
-			logger.trace("CB: invalidating {}", pair);
-			valueCache.remove(pair);
-			if (isRoot) {
-				invalidatedRoots.add(pair);
-			}
-			// remove potentially created instances
-			propertiesToManagedInstances.computeIfPresent(pair, (k, list) -> {
-				if (list != null) {
-					invalidatedInstances.addAll(list);
-				}
-				return null;
-			});
-			return null;
-		});
+	void invalidateCache(Object subject, IReference property) {
+		valueCache.remove(new Pair<>(subject, property));
 	}
 
-	public void reevaluate() {
-		// remove computations for invalidated instances from dependency graph
-		Collection<Pair<Object, IReference>> rootsForReevaluation = invalidatedRoots.stream().filter(root -> {
-			if (invalidatedInstances.contains(root.getFirst())) {
-				dependencyGraph.remove(root);
-				// do not consider this node for reevaluation
-				return false;
-			} else {
-				return true;
-			}
-		}).collect(Collectors.toList());
-		for (Pair<Object, IReference> pair : rootsForReevaluation) {
-			logger.trace("re-evaluating {}", pair);
-			try {
-				evaluateRoot(pair.getFirst(), pair.getSecond(), Optional.empty());
-			} catch (Exception e) {
-				logger.error(e.getMessage());
-			}
-		}
-		invalidatedRoots.clear();
-		invalidatedInstances.clear();
+	void clearCache() {
+		valueCache.clear();
 	}
 }

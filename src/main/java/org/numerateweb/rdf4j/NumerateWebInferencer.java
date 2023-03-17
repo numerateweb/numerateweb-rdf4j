@@ -20,10 +20,10 @@ import net.enilink.komma.rdf4j.RDF4JValueConverter;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.transaction.IsolationLevel;
 import org.eclipse.rdf4j.common.transaction.IsolationLevels;
+import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.ValueFactory;
-import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.Dataset;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
@@ -60,7 +60,15 @@ public class NumerateWebInferencer extends NotifyingSailWrapper {
 			+ "}";
 	protected static final ParsedQuery targetsQuery = QueryParserUtil.parseQuery(QueryLanguage.SPARQL, TARGETS_QUERY,
 			null);
-
+	private static final String INVALID_TARGETS_QUERY = Rdf4jModelAccess.PREFIX +
+			SparqlUtils.prefix("mathrl", NWRULES.NAMESPACE)
+			+ "SELECT ?instance ?property WHERE { " //
+			+ "{ select distinct ?instance { { select ?invalidated { ?invalidated <math:invalid> true }} ?invalidated <math:usedBy>* ?instance . }}"
+			+ "?instance a [ rdfs:subClassOf* ?c ] ." //
+			+ "?c mathrl:constraint ?constraint . ?constraint mathrl:onProperty ?property ." //
+			+ "}";
+	protected static final ParsedQuery invalidDTargetsQuery = QueryParserUtil.parseQuery(QueryLanguage.SPARQL, INVALID_TARGETS_QUERY,
+			null);
 	private static final IsolationLevels READ_COMMITTED = IsolationLevels.READ_COMMITTED;
 
 	protected Injector injector;
@@ -71,6 +79,9 @@ public class NumerateWebInferencer extends NotifyingSailWrapper {
 
 	protected ThreadLocal<SailConnection> connection = new ThreadLocal<>();
 	volatile boolean inferencing = false;
+
+	IRI USED_BY;
+	IRI INVALID;
 
 	/*--------------*
 	 * Constructors *
@@ -97,6 +108,8 @@ public class NumerateWebInferencer extends NotifyingSailWrapper {
 		});
 		valueConverter = injector.getInstance(RDF4JValueConverter.class);
 		literalConverter = injector.getInstance(LiteralConverter.class);
+		USED_BY = getValueFactory().createIRI("math:usedBy");
+		INVALID = getValueFactory().createIRI("math:invalid");
 	}
 
 	@Override
@@ -104,16 +117,23 @@ public class NumerateWebInferencer extends NotifyingSailWrapper {
 		return new NumerateWebInferencerConnection(this, (InferencerConnection) super.getConnection());
 	}
 
-	void update(Statement stmt, boolean added) {
+	void update(SailConnection connection, Statement stmt, boolean added) {
 		if (inferencing) {
 			return;
 		}
-		if (!evaluators.isEmpty()) {
+		try {
+			inferencing = true;
+			((InferencerConnection) connection).addInferredStatement(stmt.getSubject(),
+					INVALID, getValueFactory().createLiteral(true));
+		} finally {
+			inferencing = false;
+		}
+		/*if (!evaluators.isEmpty()) {
 			Rdf4jEvaluator evaluator = evaluators.get(stmt.getContext());
 			if (evaluator != null) {
 				evaluator.invalidate(stmt.getSubject(), valueConverter.fromRdf4j(stmt.getPredicate()));
 			}
-		}
+		}*/
 	}
 
 	public void reevaluate(SailConnection connection) {
@@ -125,11 +145,52 @@ public class NumerateWebInferencer extends NotifyingSailWrapper {
 				doFullInferencing(connection);
 				initialInferencingDone = true;
 			} else {
-				evaluators.values().forEach(e -> e.reevaluate());
+				doIncrementalInferencing(connection);
+				// evaluators.values().forEach(e -> e.reevaluate());
 			}
 		} finally {
 			inferencing = false;
 		}
+	}
+
+	public void doIncrementalInferencing(SailConnection connection) {
+		SimpleDataset dataset = new SimpleDataset();
+		BindingSet bindingSet = new ListBindingSet(List.of(), List.of());
+		Set<BindingSet> invalidTargets = connection
+				.evaluate(invalidDTargetsQuery.getTupleExpr(), dataset, bindingSet, true)
+				.stream().collect(Collectors.toSet());
+
+		for (BindingSet bindings : invalidTargets) {
+			Resource instance = (Resource) bindings.getValue("instance");
+			Resource property = (Resource) bindings.getValue("property");
+			Resource targetGraph = (Resource) bindings.getValue("targetGraph");
+			((InferencerConnection) connection).removeInferredStatement(instance, USED_BY, null);
+			Rdf4jEvaluator evaluator = evaluators.get(targetGraph);
+			if (evaluator != null) {
+				evaluator.invalidateCache(instance, valueConverter.fromRdf4j(property));
+			}
+			((InferencerConnection) connection).removeInferredStatement(instance, (IRI) property, null);
+		}
+
+		for (BindingSet bindings : invalidTargets) {
+			Resource instance = (Resource) bindings.getValue("instance");
+			Resource property = (Resource) bindings.getValue("property");
+			Resource targetGraph = (Resource) bindings.getValue("targetGraph");
+			Rdf4jEvaluator evaluator = evaluators.computeIfAbsent(targetGraph, graph -> {
+				CacheManager cacheManager = new CacheManager(new GuavaCacheFactory());
+				// TODO use thread-local connection or something like that
+				Supplier<SailConnection> connSupplier = () -> this.connection.get();
+				Supplier<Dataset> datasetSupplier = () -> dataset;
+				Rdf4jModelAccess modelAccess = new Rdf4jModelAccess(literalConverter,
+						getValueFactory(), connSupplier, datasetSupplier, cacheManager);
+				return new Rdf4jEvaluator(modelAccess, cacheManager);
+			});
+			evaluator.evaluateRoot(instance, valueConverter.fromRdf4j(property), Optional.empty());
+		}
+
+		((InferencerConnection) connection).removeInferredStatement(null,
+				INVALID, getValueFactory().createLiteral(true));
+
 	}
 
 	public void doFullInferencing(SailConnection connection) {

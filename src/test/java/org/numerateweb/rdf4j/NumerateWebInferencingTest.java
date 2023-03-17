@@ -23,10 +23,10 @@ public class NumerateWebInferencingTest {
 
 	protected NumerateWebInferencer createSail() {
 		file = Files.newTemporaryFolder();
-		LmdbStoreConfig config = new LmdbStoreConfig("spoc,ospc,psoc");
+		LmdbStoreConfig config = new LmdbStoreConfig();
 		config.setForceSync(false);
 		LmdbStore store = new LmdbStore(file, config);
-		NumerateWebInferencer sailStack = new NumerateWebInferencer(store);
+		NumerateWebInferencer sailStack = new NumerateWebInferencer(store); //new NativeStore(file));
 		return sailStack;
 	}
 
@@ -64,15 +64,15 @@ public class NumerateWebInferencingTest {
 				}
 			}
 		}
-
-		for (int i = 0; i < 100; i++) {
+		System.out.println("Updating...");
+		for (int i = 0; i < 10; i++) {
 			long start = System.currentTimeMillis();
 
 			// TODO inserting fixed value multiple times does not work
 			String updateQuery = "prefix : <http://example.org/vocab#> " +
 					"delete { ?s :a ?o } " +
 					"insert { ?s :a " + i + " } " +
-					"where { ?s a :Rectangle ; :a ?o }";
+					"where { { select ?s { ?s a :Rectangle } limit 1 } ?s :a ?o }";
 			try (RepositoryConnection connection = repository.getConnection()) {
 				connection.prepareUpdate(updateQuery).execute();
 

@@ -214,7 +214,6 @@ public class Rdf4jModelAccess implements IModelAccess {
 	@Override
 	public ResultSpec<OMObject> getExpressionSpec(Object subject, IReference property) {
 		Resource subjectResource = (Resource) subject;
-		Pair<Resource, IReference> resourceKey = new Pair<>(subjectResource, property);
 		for (Resource clazz : sort(getDirectClasses(subjectResource))) {
 			Pair<Resource, IReference> key = new Pair<>(clazz, property);
 			CacheResult<ResultSpec<OMObject>> cacheResult = classToExpression.get(key);
@@ -333,7 +332,12 @@ public class Rdf4jModelAccess implements IModelAccess {
 			stmts = stmts.filter(stmt -> stmt.getObject().isLiteral() ? true :
 					baseConn.hasStatement((Resource) stmt.getObject(), RDF.TYPE, restrictionResource, true));
 		}
-		return WrappedIterator.create(stmts.map(stmt -> stmt.getObject()).collect(Collectors.toList()).iterator());
+		return WrappedIterator.create(stmts.map(stmt -> {
+			if (stmt.getObject().isLiteral()) {
+				return literalConverter.createObject((ILiteral) valueConverter.fromRdf4j(stmt.getObject()));
+			}
+			return stmt.getObject();
+		}).collect(Collectors.toList()).iterator());
 	}
 
 	protected List<Resource> sort(List<Resource> classes) {
@@ -342,8 +346,8 @@ public class Rdf4jModelAccess implements IModelAccess {
 	}
 
 	public void setPropertyValue(Object subject, IReference property, List<Object> results) {
-		((InferencerConnection) connection.get()).removeInferredStatement((Resource) subject,
-				(IRI) valueConverter.toRdf4j(property), null);
+		// ((InferencerConnection) connection.get()).removeInferredStatement((Resource) subject,
+		//		(IRI) valueConverter.toRdf4j(property), null);
 		if (!results.isEmpty()) {
 			Object value = results.get(0);
 			Value rdfValue;
@@ -357,6 +361,11 @@ public class Rdf4jModelAccess implements IModelAccess {
 			((InferencerConnection) connection.get()).addInferredStatement((Resource) subject,
 					(IRI) valueConverter.toRdf4j(property), rdfValue);
 		}
-		//System.out.println(String.format("%s: %s = %s", subject, property, results));
+		// System.out.println(String.format("%s: %s = %s", subject, property, results));
+	}
+
+	void addDependency(Pair<Object, IReference> from, Pair<Object, IReference> to) {
+		((InferencerConnection) connection.get()).addInferredStatement((Resource) to.getFirst(),
+				valueFactory.createIRI("math:usedBy"), (Resource) from.getFirst());
 	}
 }
