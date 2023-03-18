@@ -16,7 +16,6 @@ import java.util.function.Function;
 public class Rdf4jEvaluator extends SimpleEvaluator {
 
 	protected final static Logger logger = LoggerFactory.getLogger(Rdf4jEvaluator.class);
-	protected Map<Class<?>, Function<Object, Collection<String>>> ignoreLookup = new HashMap<>();
 	protected Map<Pair<Object, IReference>, List<Object>> propertiesToManagedInstances = new HashMap<>();
 
 	public Rdf4jEvaluator(Rdf4jModelAccess modelAccess, CacheManager cacheManager) {
@@ -30,10 +29,6 @@ public class Rdf4jEvaluator extends SimpleEvaluator {
 		List<Object> instances = propertiesToManagedInstances.computeIfAbsent(property, k -> new ArrayList<>());
 		instances.add(instance);
 		return instance;
-	}
-
-	public void registerIgnoreLookup(Class<?> clazz, Function<Object, Collection<String>> getter) {
-		ignoreLookup.put(clazz, getter);
 	}
 
 	@Override
@@ -64,14 +59,13 @@ public class Rdf4jEvaluator extends SimpleEvaluator {
 		// check if already in cache
 		boolean cached = (null != valueCache.get(new Pair<>(subject, property)));
 		// check if the property should be calculated for this subject
-		if (ignoreLookup.containsKey(subject.getClass())
-				&& ignoreLookup.get(subject.getClass()).apply(subject).contains(property.getURI().localPart())) {
+		/*if (dontCalculateValue) {
 			Object value = getPropertyValue(subject, property);
 			logger.trace("ignoring evaluation for ({}.{}), existing value = {}", subject, property, value);
 			// property should be ignored for this subject, add current value to cache
 			valueCache.put(new Pair<>(subject, property), value);
 			cached = true;
-		}
+		}*/
 		// WARNING: side effect, adds dependencies; DO NOT skip when cached!
 		Result result = super.evaluate(subject, property, restriction);
 		if (getConstraintExpression(subject, property) == null) {

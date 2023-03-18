@@ -72,7 +72,7 @@ public class NumerateWebInferencingTest {
 			String updateQuery = "prefix : <http://example.org/vocab#> " +
 					"delete { ?s :a ?o } " +
 					"insert { ?s :a " + i + " } " +
-					"where { { select ?s { ?s a :Rectangle } limit 1 } ?s :a ?o }";
+					"where { { select ?s { ?s a :Rectangle } } ?s :a ?o }";
 			try (RepositoryConnection connection = repository.getConnection()) {
 				connection.prepareUpdate(updateQuery).execute();
 

@@ -13,6 +13,7 @@ package org.numerateweb.rdf4j;
 import com.google.inject.AbstractModule;
 import com.google.inject.Guice;
 import com.google.inject.Injector;
+import net.enilink.komma.core.IReference;
 import net.enilink.komma.core.KommaModule;
 import net.enilink.komma.em.ManagerCompositionModule;
 import net.enilink.komma.literals.LiteralConverter;
@@ -46,7 +47,6 @@ import org.numerateweb.math.util.SparqlUtils;
 
 import java.util.*;
 import java.util.function.Supplier;
-import java.util.stream.Collectors;
 
 public class NumerateWebInferencer extends NotifyingSailWrapper {
 
@@ -62,26 +62,23 @@ public class NumerateWebInferencer extends NotifyingSailWrapper {
 			null);
 	private static final String INVALID_TARGETS_QUERY = Rdf4jModelAccess.PREFIX +
 			SparqlUtils.prefix("mathrl", NWRULES.NAMESPACE)
-			+ "SELECT ?instance ?property WHERE { " //
-			+ "{ select distinct ?instance { { select ?invalidated { ?invalidated <math:invalid> true }} ?invalidated <math:usedBy>* ?instance . }}"
-			+ "?instance a [ rdfs:subClassOf* ?c ] ." //
-			+ "?c mathrl:constraint ?constraint . ?constraint mathrl:onProperty ?property ." //
+			+ "SELECT distinct ?instance { " //
+			+ "{ select ?invalidated { ?invalidated <math:invalid> true } } ?invalidated <math:usedBy>* ?instance ."
 			+ "}";
-	protected static final ParsedQuery invalidDTargetsQuery = QueryParserUtil.parseQuery(QueryLanguage.SPARQL, INVALID_TARGETS_QUERY,
+	protected static final ParsedQuery invalidTargetsQuery = QueryParserUtil.parseQuery(QueryLanguage.SPARQL, INVALID_TARGETS_QUERY,
 			null);
 	private static final IsolationLevels READ_COMMITTED = IsolationLevels.READ_COMMITTED;
-
+	protected final CacheManager cacheManager = new CacheManager(new GuavaCacheFactory());
 	protected Injector injector;
 	protected RDF4JValueConverter valueConverter;
 	protected LiteralConverter literalConverter;
 	protected Map<Resource, Rdf4jEvaluator> evaluators = new HashMap<>();
 	protected boolean initialInferencingDone = false;
-
 	protected ThreadLocal<SailConnection> connection = new ThreadLocal<>();
+	protected Rdf4jModelAccess modelAccess;
 	volatile boolean inferencing = false;
-
 	IRI USED_BY;
-	IRI INVALID;
+	private Set<Resource> changedResources = new HashSet<>();
 
 	/*--------------*
 	 * Constructors *
@@ -109,7 +106,11 @@ public class NumerateWebInferencer extends NotifyingSailWrapper {
 		valueConverter = injector.getInstance(RDF4JValueConverter.class);
 		literalConverter = injector.getInstance(LiteralConverter.class);
 		USED_BY = getValueFactory().createIRI("math:usedBy");
-		INVALID = getValueFactory().createIRI("math:invalid");
+		Supplier<SailConnection> connSupplier = () -> this.connection.get();
+		SimpleDataset dataset = new SimpleDataset();
+		Supplier<Dataset> datasetSupplier = () -> dataset;
+		modelAccess = new Rdf4jModelAccess(literalConverter,
+				getValueFactory(), connSupplier, datasetSupplier, cacheManager);
 	}
 
 	@Override
@@ -123,8 +124,7 @@ public class NumerateWebInferencer extends NotifyingSailWrapper {
 		}
 		try {
 			inferencing = true;
-			((InferencerConnection) connection).addInferredStatement(stmt.getSubject(),
-					INVALID, getValueFactory().createLiteral(true));
+			changedResources.add(stmt.getSubject());
 		} finally {
 			inferencing = false;
 		}
@@ -140,7 +140,7 @@ public class NumerateWebInferencer extends NotifyingSailWrapper {
 		try {
 			inferencing = true;
 
-			this.connection.set(connection);
+			modelAccess.clearDependencyCache();;			this.connection.set(connection);
 			if (!initialInferencingDone) {
 				doFullInferencing(connection);
 				initialInferencingDone = true;
@@ -154,43 +154,30 @@ public class NumerateWebInferencer extends NotifyingSailWrapper {
 	}
 
 	public void doIncrementalInferencing(SailConnection connection) {
-		SimpleDataset dataset = new SimpleDataset();
-		BindingSet bindingSet = new ListBindingSet(List.of(), List.of());
-		Set<BindingSet> invalidTargets = connection
-				.evaluate(invalidDTargetsQuery.getTupleExpr(), dataset, bindingSet, true)
-				.stream().collect(Collectors.toSet());
-
-		for (BindingSet bindings : invalidTargets) {
-			Resource instance = (Resource) bindings.getValue("instance");
-			Resource property = (Resource) bindings.getValue("property");
-			Resource targetGraph = (Resource) bindings.getValue("targetGraph");
-			((InferencerConnection) connection).removeInferredStatement(instance, USED_BY, null);
-			Rdf4jEvaluator evaluator = evaluators.get(targetGraph);
-			if (evaluator != null) {
-				evaluator.invalidateCache(instance, valueConverter.fromRdf4j(property));
+		for (Resource instance : changedResources) {
+			Rdf4jEvaluator evaluator = evaluators.get(null);
+			Set<IReference> properties = modelAccess.getPropertiesWithConstraintsOfResource(instance);
+			for (IReference property : properties) {
+				if (evaluator != null) {
+					evaluator.invalidateCache(instance, property);
+				}
+				((InferencerConnection) connection).removeInferredStatement(instance,
+						(IRI) valueConverter.toRdf4j(property), null);
 			}
-			((InferencerConnection) connection).removeInferredStatement(instance, (IRI) property, null);
+			if (!properties.isEmpty()) {
+				((InferencerConnection) connection).removeInferredStatement(instance, USED_BY, null);
+			}
 		}
 
-		for (BindingSet bindings : invalidTargets) {
-			Resource instance = (Resource) bindings.getValue("instance");
-			Resource property = (Resource) bindings.getValue("property");
-			Resource targetGraph = (Resource) bindings.getValue("targetGraph");
-			Rdf4jEvaluator evaluator = evaluators.computeIfAbsent(targetGraph, graph -> {
-				CacheManager cacheManager = new CacheManager(new GuavaCacheFactory());
-				// TODO use thread-local connection or something like that
-				Supplier<SailConnection> connSupplier = () -> this.connection.get();
-				Supplier<Dataset> datasetSupplier = () -> dataset;
-				Rdf4jModelAccess modelAccess = new Rdf4jModelAccess(literalConverter,
-						getValueFactory(), connSupplier, datasetSupplier, cacheManager);
+		for (Resource instance : changedResources) {
+			Rdf4jEvaluator evaluator = evaluators.computeIfAbsent(null, graph -> {
 				return new Rdf4jEvaluator(modelAccess, cacheManager);
 			});
-			evaluator.evaluateRoot(instance, valueConverter.fromRdf4j(property), Optional.empty());
+			for (IReference property : modelAccess.getPropertiesWithConstraintsOfResource(instance)) {
+				evaluator.evaluateRoot(instance, property, Optional.empty());
+			}
 		}
-
-		((InferencerConnection) connection).removeInferredStatement(null,
-				INVALID, getValueFactory().createLiteral(true));
-
+		changedResources.clear();
 	}
 
 	public void doFullInferencing(SailConnection connection) {

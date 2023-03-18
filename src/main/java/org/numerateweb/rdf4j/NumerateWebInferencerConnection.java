@@ -12,13 +12,9 @@ package org.numerateweb.rdf4j;
 
 import org.eclipse.rdf4j.common.transaction.IsolationLevel;
 import org.eclipse.rdf4j.common.transaction.IsolationLevels;
-import org.eclipse.rdf4j.model.Model;
-import org.eclipse.rdf4j.model.Statement;
+import org.eclipse.rdf4j.model.*;
 import org.eclipse.rdf4j.model.impl.DynamicModelFactory;
-import org.eclipse.rdf4j.sail.Sail;
-import org.eclipse.rdf4j.sail.SailConnectionListener;
-import org.eclipse.rdf4j.sail.SailException;
-import org.eclipse.rdf4j.sail.UnknownSailTransactionStateException;
+import org.eclipse.rdf4j.sail.*;
 import org.eclipse.rdf4j.sail.inferencer.InferencerConnection;
 import org.eclipse.rdf4j.sail.inferencer.InferencerConnectionWrapper;
 import org.eclipse.rdf4j.sail.model.SailModel;
