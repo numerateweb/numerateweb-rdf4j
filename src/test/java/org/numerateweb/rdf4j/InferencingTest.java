@@ -18,7 +18,6 @@ import static org.junit.Assert.assertTrue;
 
 public class InferencingTest {
 	static final String NS = "http://example.org/";
-	static final int seed = 1337;
 
 	protected NumerateWebInferencer createSail() {
 		return new NumerateWebInferencer(new MemoryStore());
@@ -148,6 +147,30 @@ public class InferencingTest {
 					assertTrue(v.isPresent());
 					assertTrue(v.get().isLiteral());
 					assertEquals(i * (2 * i), ((Literal) v.get()).intValue());
+				}
+			}
+		}
+
+		// double value of property :a by using an update query
+		String updateQuery = "prefix : <" + NS + "> " +
+				"delete { ?s :a ?o } " +
+				"insert { ?s :a ?newValue } " +
+				"where { ?s :a ?o . bind(?o * 2 as ?newValue) }";
+		try (RepositoryConnection connection = repository.getConnection()) {
+			connection.prepareUpdate(updateQuery).execute();
+		}
+
+		try (RepositoryConnection connection = repository.getConnection()) {
+			// ensure that area of all rectangles has been doubled
+			for (int i = 0; i < 10; i++) {
+				Resource r = vf.createIRI(NS + "rect" + i);
+
+				try (RepositoryResult<Statement> result = connection.getStatements(r, targetProperty, null)) {
+					Optional<Value> v = result.stream().map(st -> st.getObject()).findFirst();
+
+					assertTrue(v.isPresent());
+					assertTrue(v.get().isLiteral());
+					assertEquals(2 * i * (2 * i), ((Literal) v.get()).intValue());
 				}
 			}
 		}

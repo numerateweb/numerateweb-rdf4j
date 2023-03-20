@@ -135,12 +135,13 @@ public class NumerateWebInferencer extends NotifyingSailWrapper {
 		} finally {
 			inferencing = false;
 		}
-		/*if (!evaluators.isEmpty()) {
+		// this is required to correctly invalidate any cached values
+		if (!evaluators.isEmpty()) {
 			Rdf4jEvaluator evaluator = evaluators.get(stmt.getContext());
 			if (evaluator != null) {
-				evaluator.invalidate(stmt.getSubject(), valueConverter.fromRdf4j(stmt.getPredicate()));
+				evaluator.invalidateCache(stmt.getSubject(), valueConverter.fromRdf4j(stmt.getPredicate()));
 			}
-		}*/
+		}
 	}
 
 	public void reevaluate(SailConnection connection) {
