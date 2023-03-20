@@ -147,9 +147,8 @@ public class NumerateWebInferencer extends NotifyingSailWrapper {
 		try {
 			inferencing = true;
 
-			modelAccess.setPropertyCount = 0;
 			modelAccess.clearDependencyCache();
-			;
+
 			this.connection.set(connection);
 			if (!initialInferencingDone) {
 				doFullInferencing(connection);
@@ -158,7 +157,6 @@ public class NumerateWebInferencer extends NotifyingSailWrapper {
 				doIncrementalInferencing(connection);
 				// evaluators.values().forEach(e -> e.reevaluate());
 			}
-			System.out.println("Update properties: " + modelAccess.setPropertyCount);
 		} finally {
 			inferencing = false;
 		}

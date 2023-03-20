@@ -111,6 +111,7 @@ public class Rdf4jModelAccess implements IModelAccess {
 	Map<Resource, Map<IReference, ResultSpec<OMObject>>> classToConstraints = new HashMap<>();
 	ICache<Resource, List<Resource>> resourceTypes;
 	Set<Pair<Resource, Resource>> dependencyCache = new HashSet<>();
+	Map<IReference, IRI> propertyCache = new HashMap<>();
 
 	public Rdf4jModelAccess(LiteralConverter literalConverter, ValueFactory valueFactory,
 	                        Supplier<SailConnection> connection, Supplier<Dataset> dataset,
@@ -253,7 +254,7 @@ public class Rdf4jModelAccess implements IModelAccess {
 
 			for (Resource superClass : sort(getDirectSuperClasses(clazz))) {
 				for (Map.Entry<IReference, ResultSpec<OMObject>> superConstraint : getConstraintsForClass(superClass).entrySet()) {
-					if (! constraints.containsKey(superConstraint.getKey())) {
+					if (!constraints.containsKey(superConstraint.getKey())) {
 						constraints.put(superConstraint.getKey(), superConstraint.getValue());
 					}
 				}
@@ -301,8 +302,9 @@ public class Rdf4jModelAccess implements IModelAccess {
 	public IExtendedIterator<?> getPropertyValues(Object subject, IReference property,
 	                                              Optional<IReference> restriction) {
 		SailConnection baseConn = ((SailConnectionWrapper) connection.get()).getWrappedConnection();
+		IRI propertyIri = propertyCache.computeIfAbsent(property, p -> (IRI) valueConverter.toRdf4j(p));
 		Stream<? extends org.eclipse.rdf4j.model.Statement> stmts = baseConn.getStatements((Resource) subject,
-				(IRI) valueConverter.toRdf4j(property), null, false).stream();
+				propertyIri, null, false).stream();
 		if (restriction.isPresent()) {
 			Resource restrictionResource = valueConverter.toRdf4j(restriction.get());
 			stmts = stmts.filter(stmt -> stmt.getObject().isLiteral() ? true :
@@ -321,10 +323,7 @@ public class Rdf4jModelAccess implements IModelAccess {
 		return classes;
 	}
 
-	long setPropertyCount;
-
 	public void setPropertyValue(Object subject, IReference property, List<Object> results) {
-		setPropertyCount++;
 		// ((InferencerConnection) connection.get()).removeInferredStatement((Resource) subject,
 		//		(IRI) valueConverter.toRdf4j(property), null);
 		if (!results.isEmpty()) {

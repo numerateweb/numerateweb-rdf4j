@@ -1,4 +1,4 @@
-@prefix :       <http://example.org/vocab#> .
+@prefix :       <http://example.org/> .
 @prefix math:   <http://numerateweb.org/vocab/math#> .
 @prefix mathrl: <http://numerateweb.org/vocab/math/rules#> .
 @prefix sh:     <http://www.w3.org/ns/shacl#> .
@@ -8,5 +8,5 @@
 @prefix xsd:    <http://www.w3.org/2001/XMLSchema#> .
 
 : sh:declare [
-  sh:prefix "" ; sh:namespace "http://example.org/vocab#"^^xsd:anyURI ;
+  sh:prefix "" ; sh:namespace "http://example.org/"^^xsd:anyURI ;
 ] .

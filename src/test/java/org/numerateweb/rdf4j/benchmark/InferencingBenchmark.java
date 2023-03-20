@@ -18,6 +18,7 @@ import java.util.concurrent.TimeUnit;
 
 import org.apache.commons.io.FileUtils;
 import org.assertj.core.util.Files;
+import org.eclipse.rdf4j.common.transaction.IsolationLevels;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.ValueFactory;
@@ -45,11 +46,14 @@ import org.openjdk.jmh.runner.options.OptionsBuilder;
 @OutputTimeUnit(TimeUnit.MILLISECONDS)
 public class InferencingBenchmark {
 
-	@Param({"10"})
+	@Param({"2"})
 	int constraintsPerClass;
 
-	@Param({"10"})
-	int propertiesPerConstraint;
+	@Param({"5"})
+	int sharedPropertiesPerConstraint;
+
+	@Param({"5"})
+	int uniquePropertiesPerConstraint;
 
 	@Param({"10000"})
 	int instances;
@@ -69,10 +73,11 @@ public class InferencingBenchmark {
 
 	void createConstraints(String ns, Resource targetClass) {
 		ValueFactory vf = repository.getValueFactory();
-		IRI constraintClass = vf.createIRI("http://numerateweb.org/vocab/math/rules#Constraint");
-		IRI constraint = vf.createIRI("http://numerateweb.org/vocab/math/rules#constraint");
-		IRI onProperty = vf.createIRI("http://numerateweb.org/vocab/math/rules#onProperty");
-		IRI expressionString = vf.createIRI("http://numerateweb.org/vocab/math/rules#expressionString");
+		String nw = "http://numerateweb.org/vocab/math/rules#";
+		IRI constraintClass = vf.createIRI(nw + "Constraint");
+		IRI constraint = vf.createIRI(nw + "constraint");
+		IRI onProperty = vf.createIRI(nw + "onProperty");
+		IRI expressionString = vf.createIRI(nw + "expressionString");
 		IRI prefixes = vf.createIRI("http://www.w3.org/ns/shacl#prefixes");
 		IRI prefixesResource = vf.createIRI(ns);
 
@@ -83,11 +88,17 @@ public class InferencingBenchmark {
 			if (c > 0) {
 				expression.append("@c" + (c - 1)).append(" + ");
 			}
-			for (int p = 0; p < propertiesPerConstraint; p++) {
+			for (int p = 0; p < uniquePropertiesPerConstraint; p++) {
 				if (p > 0) {
 					expression.append(" + ");
 				}
 				expression.append("@p" + c + "-" + p);
+			}
+			for (int p = 0; p < sharedPropertiesPerConstraint; p++) {
+				if (p > 0) {
+					expression.append(" + ");
+				}
+				expression.append("@p" + p);
 			}
 
 			Resource constraintResource = vf.createBNode();
@@ -97,17 +108,17 @@ public class InferencingBenchmark {
 			connection.add(constraintResource, expressionString, vf.createLiteral(expression.toString()));
 			connection.add(constraintResource, prefixes, prefixesResource);
 
-			System.out.println("c: " + c + " -> " + expression);
+			// System.out.println("c: " + c + " -> " + expression);
 		}
 	}
 
 	@Benchmark
 	public void transactions() {
 		ValueFactory vf = repository.getValueFactory();
-		String ns = "http://example.org/vocab#";
+		String ns = "http://example.org/";
 		Random rnd = new Random(1337);
 
-		connection.begin();
+		connection.begin(IsolationLevels.NONE);
 		try {
 			connection.add(getClass().getResource("/benchmark-base.ttl"), RDFFormat.TURTLE);
 
@@ -115,11 +126,14 @@ public class InferencingBenchmark {
 			createConstraints(ns, clazz);
 
 			for (int i = 0; i < instances; i++) {
-				Resource r = vf.createIRI(ns + "instance" + i++);
+				Resource r = vf.createIRI(ns + "instance" + i);
 				connection.add(r, RDF.TYPE, clazz);
 				for (int c = 0; c < constraintsPerClass; c++) {
-					for (int p = 0; p < propertiesPerConstraint; p++) {
+					for (int p = 0; p < uniquePropertiesPerConstraint; p++) {
 						connection.add(r, vf.createIRI(ns + "p" + c + "-" + p), vf.createLiteral(1 + rnd.nextInt(10)));
+					}
+					for (int p = 0; p < sharedPropertiesPerConstraint; p++) {
+						connection.add(r, vf.createIRI(ns + "p" + p), vf.createLiteral(1 + rnd.nextInt(10)));
 					}
 				}
 
