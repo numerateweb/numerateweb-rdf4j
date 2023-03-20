@@ -43,6 +43,8 @@ import org.numerateweb.math.rdf.NWMathModule;
 import org.numerateweb.math.rdf.rules.NWRULES;
 import org.numerateweb.math.reasoner.CacheManager;
 import org.numerateweb.math.reasoner.GuavaCacheFactory;
+import org.numerateweb.math.reasoner.ICache;
+import org.numerateweb.math.reasoner.ICacheFactory;
 import org.numerateweb.math.util.SparqlUtils;
 
 import java.util.*;
@@ -68,7 +70,12 @@ public class NumerateWebInferencer extends NotifyingSailWrapper {
 	protected static final ParsedQuery invalidTargetsQuery = QueryParserUtil.parseQuery(QueryLanguage.SPARQL, INVALID_TARGETS_QUERY,
 			null);
 	private static final IsolationLevels READ_COMMITTED = IsolationLevels.READ_COMMITTED;
-	protected final CacheManager cacheManager = new CacheManager(new GuavaCacheFactory());
+	protected final CacheManager cacheManager = new CacheManager(new ICacheFactory() {
+		@Override
+		public <K, V> ICache<K, V> create() {
+			return new GuavaCache<>();
+		}
+	});
 	protected Injector injector;
 	protected RDF4JValueConverter valueConverter;
 	protected LiteralConverter literalConverter;
@@ -140,7 +147,10 @@ public class NumerateWebInferencer extends NotifyingSailWrapper {
 		try {
 			inferencing = true;
 
-			modelAccess.clearDependencyCache();;			this.connection.set(connection);
+			modelAccess.setPropertyCount = 0;
+			modelAccess.clearDependencyCache();
+			;
+			this.connection.set(connection);
 			if (!initialInferencingDone) {
 				doFullInferencing(connection);
 				initialInferencingDone = true;
@@ -148,13 +158,17 @@ public class NumerateWebInferencer extends NotifyingSailWrapper {
 				doIncrementalInferencing(connection);
 				// evaluators.values().forEach(e -> e.reevaluate());
 			}
+			System.out.println("Update properties: " + modelAccess.setPropertyCount);
 		} finally {
 			inferencing = false;
 		}
 	}
 
 	public void doIncrementalInferencing(SailConnection connection) {
+		Set<Resource> toUpdate = new HashSet<>();
 		for (Resource instance : changedResources) {
+			toUpdate.add(instance);
+
 			Rdf4jEvaluator evaluator = evaluators.get(null);
 			Set<IReference> properties = modelAccess.getPropertiesWithConstraintsOfResource(instance);
 			for (IReference property : properties) {
@@ -165,11 +179,14 @@ public class NumerateWebInferencer extends NotifyingSailWrapper {
 						(IRI) valueConverter.toRdf4j(property), null);
 			}
 			if (!properties.isEmpty()) {
-				((InferencerConnection) connection).removeInferredStatement(instance, USED_BY, null);
+				connection.getStatements(instance, USED_BY, null, true).stream().forEach(stmt -> {
+					toUpdate.add((Resource) stmt.getObject());
+					((InferencerConnection) connection).removeInferredStatement(instance, USED_BY, stmt.getObject());
+				});
 			}
 		}
 
-		for (Resource instance : changedResources) {
+		for (Resource instance : toUpdate) {
 			Rdf4jEvaluator evaluator = evaluators.computeIfAbsent(null, graph -> {
 				return new Rdf4jEvaluator(modelAccess, cacheManager);
 			});
@@ -191,12 +208,6 @@ public class NumerateWebInferencer extends NotifyingSailWrapper {
 				Resource property = (Resource) bindings.getValue("property");
 				Resource targetGraph = (Resource) bindings.getValue("targetGraph");
 				Rdf4jEvaluator evaluator = evaluators.computeIfAbsent(targetGraph, graph -> {
-					CacheManager cacheManager = new CacheManager(new GuavaCacheFactory());
-					// TODO use thread-local connection or something like that
-					Supplier<SailConnection> connSupplier = () -> this.connection.get();
-					Supplier<Dataset> datasetSupplier = () -> dataset;
-					Rdf4jModelAccess modelAccess = new Rdf4jModelAccess(literalConverter,
-							getValueFactory(), connSupplier, datasetSupplier, cacheManager);
 					return new Rdf4jEvaluator(modelAccess, cacheManager);
 				});
 				evaluator.evaluateRoot(instance, valueConverter.fromRdf4j(property), Optional.empty());

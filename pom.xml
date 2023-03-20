@@ -9,6 +9,11 @@
 	<artifactId>rdf4j-sail-numerateweb</artifactId>
 	<name>RDF4J: NumerateWeb Sail</name>
 	<description>Stackable Sail implementation that adds mathematical inferencing to an RDF store.</description>
+
+	<properties>
+		<jmhVersion>1.35</jmhVersion>
+	</properties>
+
 	<dependencies>
 		<dependency>
 		    <groupId>com.github.numerateweb.numerateweb</groupId>
@@ -104,6 +109,18 @@
 		<dependency>
 			<groupId>org.junit.jupiter</groupId>
 			<artifactId>junit-jupiter-params</artifactId>
+			<scope>test</scope>
+		</dependency>
+		<dependency>
+			<groupId>org.openjdk.jmh</groupId>
+			<artifactId>jmh-core</artifactId>
+			<version>${jmhVersion}</version>
+			<scope>test</scope>
+		</dependency>
+		<dependency>
+			<groupId>org.openjdk.jmh</groupId>
+			<artifactId>jmh-generator-annprocess</artifactId>
+			<version>${jmhVersion}</version>
 			<scope>test</scope>
 		</dependency>
 	</dependencies>

@@ -59,8 +59,6 @@ public class Rdf4jModelAccess implements IModelAccess {
 	static final String PREFIX = "PREFIX rdf: <" + RDF.NAMESPACE
 			+ "> PREFIX rdfs: <" + RDFS.NAMESPACE + "> PREFIX owl: <"
 			+ OWL.NAMESPACE + "> PREFIX sh: <" + SHACL.NAMESPACE + "> ";
-	protected static final ParsedQuery directClassesQuery = QueryParserUtil.parseQuery(QueryLanguage.SPARQL,
-			SELECT_DIRECT_CLASSES(false), null);
 	protected static final ParsedQuery directSuperClassesQuery = QueryParserUtil.parseQuery(QueryLanguage.SPARQL,
 			SELECT_DIRECT_SUPERCLASSES(false), null);
 	/**
@@ -110,7 +108,7 @@ public class Rdf4jModelAccess implements IModelAccess {
 	private final Supplier<Dataset> dataset;
 	private final RDF4JValueConverter valueConverter;
 	private final LiteralConverter literalConverter;
-	Map<Resource, List<Pair<IReference, ResultSpec<OMObject>>>> classToConstraints = new HashMap<>();
+	Map<Resource, Map<IReference, ResultSpec<OMObject>>> classToConstraints = new HashMap<>();
 	ICache<Resource, List<Resource>> resourceTypes;
 	Set<Pair<Resource, Resource>> dependencyCache = new HashSet<>();
 
@@ -125,24 +123,6 @@ public class Rdf4jModelAccess implements IModelAccess {
 		this.resourceTypes = cacheManager.get(new TypeLiteral<>() {
 		});
 		this.USED_BY = valueFactory.createIRI("math:usedBy");
-	}
-
-
-	private static final String SELECT_DIRECT_CLASSES(boolean named) {
-		return PREFIX //
-				+ "SELECT ?class WHERE {" //
-				+ "?resource a ?class " //
-				+ (named ? "FILTER (isIRI(?class)) " : "") //
-				+ "FILTER NOT EXISTS {?resource a ?otherClass . ?otherClass rdfs:subClassOf ?class "
-				+ "FILTER (" //
-				+ (named ? "isIRI(?otherClass) && " : "") //
-				+ "?otherClass != ?class)" //
-				+ "		FILTER NOT EXISTS {?class rdfs:subClassOf ?otherClass}" //
-				+ "} " //
-				+ "FILTER NOT EXISTS {?resource a ?otherClass . FILTER ("
-				+ (named ? "isIRI(?otherClass) && " : "")
-				+ "(?class = owl:Thing || ?class = rdfs:Resource) && ?otherClass != ?class)}" //
-				+ "}";
 	}
 
 	private static final String SELECT_DIRECT_SUPERCLASSES(boolean named) {
@@ -211,11 +191,10 @@ public class Rdf4jModelAccess implements IModelAccess {
 	public ResultSpec<OMObject> getExpressionSpec(Object subject, IReference property) {
 		Resource subjectResource = (Resource) subject;
 		for (Resource clazz : sort(getDirectClasses(subjectResource))) {
-			List<Pair<IReference, ResultSpec<OMObject>>> constraints = getConstraintsForClass(clazz);
-			Optional<Pair<IReference, ResultSpec<OMObject>>> constraint = constraints.stream()
-					.filter(c -> property.equals(c.getFirst())).findFirst();
-			if (constraint.isPresent()) {
-				return constraint.get().getSecond();
+			Map<IReference, ResultSpec<OMObject>> constraints = getConstraintsForClass(clazz);
+			ResultSpec<OMObject> expressionSpec = constraints.get(property);
+			if (expressionSpec != null) {
+				return expressionSpec;
 			}
 		}
 		return ResultSpec.empty();
@@ -224,15 +203,15 @@ public class Rdf4jModelAccess implements IModelAccess {
 	public Set<IReference> getPropertiesWithConstraintsOfResource(Resource resource) {
 		Set<IReference> properties = new HashSet<>();
 		for (Resource clazz : sort(getDirectClasses(resource))) {
-			getConstraintsForClass(clazz).forEach(c -> properties.add(c.getFirst()));
+			properties.addAll(getConstraintsForClass(clazz).keySet());
 		}
 		return properties;
 	}
 
-	protected List<Pair<IReference, ResultSpec<OMObject>>> getConstraintsForClass(Resource clazz) {
-		List<Pair<IReference, ResultSpec<OMObject>>> constraints = classToConstraints.get(clazz);
+	protected Map<IReference, ResultSpec<OMObject>> getConstraintsForClass(Resource clazz) {
+		Map<IReference, ResultSpec<OMObject>> constraints = classToConstraints.get(clazz);
 		if (constraints == null) {
-			constraints = new ArrayList<>();
+			constraints = new HashMap<>();
 			classToConstraints.put(clazz, constraints);
 
 			BindingSet bindingSet = new ListBindingSet(List.of("c"), List.of(clazz));
@@ -267,16 +246,15 @@ public class Rdf4jModelAccess implements IModelAccess {
 					if (mathObj == null) {
 						mathObj = parseExpression(constraintResource);
 					}
-					Pair<IReference, ResultSpec<OMObject>> propertyWithExpression = new Pair<>(
-							valueConverter.fromRdf4j(propertyResource), ResultSpec.create(Cardinality.SINGLE, mathObj));
-					constraints.add(propertyWithExpression);
+					constraints.put(valueConverter.fromRdf4j(propertyResource),
+							ResultSpec.create(Cardinality.SINGLE, mathObj));
 				}
 			}
 
 			for (Resource superClass : sort(getDirectSuperClasses(clazz))) {
-				for (Pair<IReference, ResultSpec<OMObject>> superConstraint : getConstraintsForClass(superClass)) {
-					if (!constraints.stream().anyMatch(c -> c.getFirst().equals(superConstraint.getFirst()))) {
-						constraints.add(superConstraint);
+				for (Map.Entry<IReference, ResultSpec<OMObject>> superConstraint : getConstraintsForClass(superClass).entrySet()) {
+					if (! constraints.containsKey(superConstraint.getKey())) {
+						constraints.put(superConstraint.getKey(), superConstraint.getValue());
 					}
 				}
 			}
@@ -343,7 +321,10 @@ public class Rdf4jModelAccess implements IModelAccess {
 		return classes;
 	}
 
+	long setPropertyCount;
+
 	public void setPropertyValue(Object subject, IReference property, List<Object> results) {
+		setPropertyCount++;
 		// ((InferencerConnection) connection.get()).removeInferredStatement((Resource) subject,
 		//		(IRI) valueConverter.toRdf4j(property), null);
 		if (!results.isEmpty()) {
@@ -359,7 +340,7 @@ public class Rdf4jModelAccess implements IModelAccess {
 			((InferencerConnection) connection.get()).addInferredStatement((Resource) subject,
 					(IRI) valueConverter.toRdf4j(property), rdfValue);
 		}
-		// System.out.println(String.format("%s: %s = %s", subject, property, results));
+		//System.out.println(String.format("%s: %s = %s", subject, property, results));
 	}
 
 	void addDependency(Pair<Object, IReference> from, Pair<Object, IReference> to) {

@@ -1,0 +1,12 @@
+@prefix :       <http://example.org/vocab#> .
+@prefix math:   <http://numerateweb.org/vocab/math#> .
+@prefix mathrl: <http://numerateweb.org/vocab/math/rules#> .
+@prefix sh:     <http://www.w3.org/ns/shacl#> .
+@prefix owl:    <http://www.w3.org/2002/07/owl#> .
+@prefix rdf:    <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
+@prefix rdfs:   <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix xsd:    <http://www.w3.org/2001/XMLSchema#> .
+
+: sh:declare [
+  sh:prefix "" ; sh:namespace "http://example.org/vocab#"^^xsd:anyURI ;
+] .

@@ -19,11 +19,7 @@
 [ a mathrl:Constraint ; sh:prefixes : ;
   mathrl:onProperty :semiPerimeter ;
   mathrl:expressionString
-  "(@a + @b + @c) / 2" ] ,
-  [ a mathrl:Constraint ; sh:prefixes : ;
-    mathrl:onProperty :area2 ;
-    mathrl:expressionString
-    "$s := @semiPerimeter; 2 * root($s * ($s - @a) * ($s - @b) * ($s - @c), 2)" ] .
+  "(@a + @b + @c) / 2" ] .
 
 :Rectangle a owl:Class ; mathrl:constraint
 [ a mathrl:Constraint ; sh:prefixes : ;
@@ -31,17 +27,13 @@
   mathrl:expressionString
   "@a * @b" ] ,
 [ a mathrl:Constraint ; sh:prefixes : ;
-  mathrl:onProperty :area2 ;
+  mathrl:onProperty :aspectRatio ;
   mathrl:expressionString
-  "2 * @a * @b" ] ,
+  "@a / @b" ] ,
 [ a mathrl:Constraint ; sh:prefixes : ;
-    mathrl:onProperty :area3 ;
+    mathrl:onProperty :semiPerimeter ;
     mathrl:expressionString
-    "3 * @a * @b" ] ,
-[ a mathrl:Constraint ; sh:prefixes : ;
-  mathrl:onProperty :area4 ;
-  mathrl:expressionString
-  "4 * @a * @b" ] .
+    "@a + @b" ] .
 
 :ShapeCollection a owl:Class ; mathrl:constraint
 [ a mathrl:Constraint ; sh:prefixes : ;
@@ -49,9 +41,9 @@
   mathrl:expressionString
   "sum(@@shape, $s -> @area($s))" ] ,
 [ a mathrl:Constraint ; sh:prefixes : ;
-    mathrl:onProperty :area2 ;
+    mathrl:onProperty :count ;
     mathrl:expressionString
-    "sum(@@shape, $s -> @area2($s))" ] .
+    "sum(@@shape, $s -> 1)" ] .
 
 :shapes a :ShapeCollection ; :shape :t1, :r1 .
 :t1 a :Triangle ; :a 2 ; :b 2 ; :c 2 .
