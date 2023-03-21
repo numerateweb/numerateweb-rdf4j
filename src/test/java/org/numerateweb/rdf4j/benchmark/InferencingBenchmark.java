@@ -46,13 +46,13 @@ import org.openjdk.jmh.runner.options.OptionsBuilder;
 @OutputTimeUnit(TimeUnit.MILLISECONDS)
 public class InferencingBenchmark {
 
-	@Param({"2"})
+	@Param({"5"})
 	int constraintsPerClass;
 
 	@Param({"5"})
 	int sharedPropertiesPerConstraint;
 
-	@Param({"5"})
+	@Param({"1"})
 	int uniquePropertiesPerConstraint;
 
 	@Param({"10000"})
@@ -132,13 +132,11 @@ public class InferencingBenchmark {
 					for (int p = 0; p < uniquePropertiesPerConstraint; p++) {
 						connection.add(r, vf.createIRI(ns + "p" + c + "-" + p), vf.createLiteral(1 + rnd.nextInt(10)));
 					}
-					for (int p = 0; p < sharedPropertiesPerConstraint; p++) {
-						connection.add(r, vf.createIRI(ns + "p" + p), vf.createLiteral(1 + rnd.nextInt(10)));
-					}
 				}
 
-				// add to list of shapes
-				// connection.add(vf.createIRI(ns + "shapes"), vf.createIRI(ns + "shape"), r);
+				for (int p = 0; p < sharedPropertiesPerConstraint; p++) {
+					connection.add(r, vf.createIRI(ns + "p" + p), vf.createLiteral(1 + rnd.nextInt(10)));
+				}
 			}
 			connection.commit();
 		} catch (IOException e) {
