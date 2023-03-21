@@ -12,7 +12,7 @@ import org.slf4j.LoggerFactory;
 
 import java.util.*;
 
-public class Rdf4jEvaluator extends SimpleEvaluator {
+class Rdf4jEvaluator extends SimpleEvaluator {
 
 	protected final static Logger logger = LoggerFactory.getLogger(Rdf4jEvaluator.class);
 	protected Map<Pair<Object, IReference>, List<Object>> propertiesToManagedInstances = new HashMap<>();

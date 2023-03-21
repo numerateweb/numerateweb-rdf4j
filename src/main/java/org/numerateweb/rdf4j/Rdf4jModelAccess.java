@@ -42,7 +42,7 @@ import java.util.function.Supplier;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
-public class Rdf4jModelAccess implements IModelAccess {
+class Rdf4jModelAccess implements IModelAccess {
 	protected static final String MATH_OBJECT_QUERY = new StringBuilder()
 			.append("prefix rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> ")
 			.append("prefix math: <http://numerateweb.org/vocab/math#> ")

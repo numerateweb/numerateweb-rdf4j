@@ -1,13 +1,3 @@
-/*******************************************************************************
- * Copyright (c) 2015 Eclipse RDF4J contributors, Aduna, and others.
- *
- * All rights reserved. This program and the accompanying materials
- * are made available under the terms of the Eclipse Distribution License v1.0
- * which accompanies this distribution, and is available at
- * http://www.eclipse.org/org/documents/edl-v10.php.
- *
- * SPDX-License-Identifier: BSD-3-Clause
- *******************************************************************************/
 package org.numerateweb.rdf4j;
 
 import com.google.inject.AbstractModule;
@@ -42,7 +32,6 @@ import org.eclipse.rdf4j.sail.inferencer.InferencerConnection;
 import org.numerateweb.math.rdf.NWMathModule;
 import org.numerateweb.math.rdf.rules.NWRULES;
 import org.numerateweb.math.reasoner.CacheManager;
-import org.numerateweb.math.reasoner.GuavaCacheFactory;
 import org.numerateweb.math.reasoner.ICache;
 import org.numerateweb.math.reasoner.ICacheFactory;
 import org.numerateweb.math.util.SparqlUtils;
@@ -86,10 +75,6 @@ public class NumerateWebInferencer extends NotifyingSailWrapper {
 	volatile boolean inferencing = false;
 	IRI USED_BY;
 	private Set<Resource> changedResources = new HashSet<>();
-
-	/*--------------*
-	 * Constructors *
-	 *--------------*/
 
 	public NumerateWebInferencer() {
 		super();
@@ -156,7 +141,6 @@ public class NumerateWebInferencer extends NotifyingSailWrapper {
 				initialInferencingDone = true;
 			} else {
 				doIncrementalInferencing(connection);
-				// evaluators.values().forEach(e -> e.reevaluate());
 			}
 		} finally {
 			inferencing = false;
@@ -213,10 +197,6 @@ public class NumerateWebInferencer extends NotifyingSailWrapper {
 			}
 		}
 	}
-
-	/*---------*
-	 * Methods *
-	 *---------*/
 
 	@Override
 	public IsolationLevel getDefaultIsolationLevel() {

@@ -7,7 +7,7 @@ import com.google.common.cache.CacheBuilder;
 import org.numerateweb.math.reasoner.AbstractCache;
 import org.numerateweb.math.reasoner.CacheResult;
 
-public class GuavaCache<K, T> extends AbstractCache<K, T> {
+class GuavaCache<K, T> extends AbstractCache<K, T> {
 	private Cache<Object, Object> cache;
 
 	public GuavaCache() {
