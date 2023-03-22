@@ -1,0 +1,9 @@
+= Numerate Web components for RDF4J
+
+This repository contains an RDF4J SAIL implementation for running mathematical computations on RDF data.
+
+== Structure of the repository
+
+== Building all modules
+- This is a plain Maven project.
+- A full build can be executed via `mvn package`
