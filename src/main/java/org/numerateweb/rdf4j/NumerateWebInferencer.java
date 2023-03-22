@@ -3,6 +3,7 @@ package org.numerateweb.rdf4j;
 import com.google.inject.AbstractModule;
 import com.google.inject.Guice;
 import com.google.inject.Injector;
+import net.enilink.commons.util.Pair;
 import net.enilink.komma.core.IReference;
 import net.enilink.komma.core.KommaModule;
 import net.enilink.komma.em.ManagerCompositionModule;
@@ -15,6 +16,7 @@ import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.ValueFactory;
+import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.Dataset;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
@@ -120,6 +122,12 @@ public class NumerateWebInferencer extends NotifyingSailWrapper {
 		} finally {
 			inferencing = false;
 		}
+
+		// handle changes of resource types
+		if (RDF.TYPE.equals(stmt.getPredicate())) {
+			modelAccess.invalidateType(stmt.getSubject());
+		}
+
 		// this is required to correctly invalidate any cached values
 		if (!evaluators.isEmpty()) {
 			Rdf4jEvaluator evaluator = evaluators.get(stmt.getContext());

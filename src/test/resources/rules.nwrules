@@ -1,0 +1,16 @@
+Prefix: : <http://example.org/>
+
+Class: Rectangle
+Constraint:
+area = @a * @b,
+perimeter = 2.0 * @a + 2.0 * @b
+
+Class: Circle
+Constraint:
+area = pi * @r ^ 2,
+perimeter = 2.0 * pi * @r
+
+Class: Extrusion
+Constraint:
+volume = @area(@base) * @h,
+surface = 2.0 * @area(@base) + @perimeter(@base) * @h

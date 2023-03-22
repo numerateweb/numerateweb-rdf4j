@@ -101,17 +101,17 @@ class Rdf4jModelAccess implements IModelAccess {
 	protected static final ParsedQuery instancesQuery = QueryParserUtil.parseQuery(QueryLanguage.SPARQL, SELECT_INSTANCES,
 			null);
 	protected final ValueFactory valueFactory;
-	final IRI USED_BY;
+	private final IRI USED_BY;
 	private final ParsedQuery namespacesQuery = QueryParserUtil.parseQuery(QueryLanguage.SPARQL, PREFIX +
 			"SELECT DISTINCT ?prefix ?namespace WHERE { ?resource sh:prefixes/owl:imports*/sh:declare [ sh:prefix ?prefix ; sh:namespace ?namespace ] }", null);
 	private final Supplier<SailConnection> connection;
 	private final Supplier<Dataset> dataset;
 	private final RDF4JValueConverter valueConverter;
 	private final LiteralConverter literalConverter;
-	Map<Resource, Map<IReference, ResultSpec<OMObject>>> classToConstraints = new HashMap<>();
-	ICache<Resource, List<Resource>> resourceTypes;
-	Set<Pair<Resource, Resource>> dependencyCache = new HashSet<>();
-	Map<IReference, IRI> propertyCache = new HashMap<>();
+	private final Map<Resource, Map<IReference, ResultSpec<OMObject>>> classToConstraints = new HashMap<>();
+	private ICache<Resource, List<Resource>> resourceTypes;
+	private final Set<Pair<Resource, Resource>> dependencyCache = new HashSet<>();
+	private final Map<IReference, IRI> propertyCache = new HashMap<>();
 
 	public Rdf4jModelAccess(LiteralConverter literalConverter, ValueFactory valueFactory,
 	                        Supplier<SailConnection> connection, Supplier<Dataset> dataset,
@@ -252,6 +252,7 @@ class Rdf4jModelAccess implements IModelAccess {
 				}
 			}
 
+			// add inherited constraints from super classes
 			for (Resource superClass : sort(getDirectSuperClasses(clazz))) {
 				for (Map.Entry<IReference, ResultSpec<OMObject>> superConstraint : getConstraintsForClass(superClass).entrySet()) {
 					if (!constraints.containsKey(superConstraint.getKey())) {
@@ -351,5 +352,9 @@ class Rdf4jModelAccess implements IModelAccess {
 
 	void clearDependencyCache() {
 		dependencyCache.clear();
+	}
+
+	public void invalidateType(Resource subject) {
+		resourceTypes.remove(subject);
 	}
 }
