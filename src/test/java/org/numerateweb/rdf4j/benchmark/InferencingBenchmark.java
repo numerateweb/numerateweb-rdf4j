@@ -11,11 +11,6 @@
 
 package org.numerateweb.rdf4j.benchmark;
 
-import java.io.File;
-import java.io.IOException;
-import java.util.Random;
-import java.util.concurrent.TimeUnit;
-
 import org.apache.commons.io.FileUtils;
 import org.assertj.core.util.Files;
 import org.eclipse.rdf4j.common.transaction.IsolationLevels;
@@ -26,6 +21,7 @@ import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.rio.RDFFormat;
+import org.eclipse.rdf4j.sail.NotifyingSail;
 import org.eclipse.rdf4j.sail.lmdb.LmdbStore;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
 import org.numerateweb.rdf4j.NumerateWebInferencer;
@@ -35,13 +31,18 @@ import org.openjdk.jmh.runner.RunnerException;
 import org.openjdk.jmh.runner.options.Options;
 import org.openjdk.jmh.runner.options.OptionsBuilder;
 
+import java.io.File;
+import java.io.IOException;
+import java.util.Random;
+import java.util.concurrent.TimeUnit;
+
 /**
  * Benchmarks inferencing performance.
  */
 @State(Scope.Benchmark)
 @Warmup(iterations = 2)
 @BenchmarkMode({Mode.AverageTime})
-@Fork(value = 1, jvmArgs = {"-Xms2G", "-Xmx2G", "-Xmn1G"})
+@Fork(value = 1, jvmArgs = {"-Xms2G", "-Xmx3G", "-Xmn1G"})
 @Measurement(iterations = 5)
 @OutputTimeUnit(TimeUnit.MILLISECONDS)
 public class InferencingBenchmark {
@@ -57,6 +58,9 @@ public class InferencingBenchmark {
 
 	@Param({"10000"})
 	int instances;
+
+	@Param({"1000"})
+	int instancesPerTransaction;
 
 	private SailRepository repository;
 	private SailRepositoryConnection connection;
@@ -113,7 +117,7 @@ public class InferencingBenchmark {
 	}
 
 	@Benchmark
-	public void transactions() {
+	public void fullInference() {
 		ValueFactory vf = repository.getValueFactory();
 		String ns = "http://example.org/";
 		Random rnd = new Random(1337);
@@ -148,6 +152,50 @@ public class InferencingBenchmark {
 		}
 	}
 
+	@Benchmark
+	public void incrementalInference() {
+		ValueFactory vf = repository.getValueFactory();
+		String ns = "http://example.org/";
+		Random rnd = new Random(1337);
+
+		try {
+			IRI clazz = vf.createIRI(ns + "Object");
+
+			connection.begin(IsolationLevels.NONE);
+			connection.add(getClass().getResource("/benchmark-base.ttl"), RDFFormat.TURTLE);
+			createConstraints(ns, clazz);
+			connection.commit();
+
+			for (int i = 0; i < instances; i++) {
+				if (i % instancesPerTransaction == 0) {
+					connection.begin(IsolationLevels.NONE);
+				}
+
+				Resource r = vf.createIRI(ns + "instance" + i);
+				connection.add(r, RDF.TYPE, clazz);
+				for (int c = 0; c < constraintsPerClass; c++) {
+					for (int p = 0; p < uniquePropertiesPerConstraint; p++) {
+						connection.add(r, vf.createIRI(ns + "p" + c + "-" + p), vf.createLiteral(1 + rnd.nextInt(10)));
+					}
+				}
+
+				for (int p = 0; p < sharedPropertiesPerConstraint; p++) {
+					connection.add(r, vf.createIRI(ns + "p" + p), vf.createLiteral(1 + rnd.nextInt(10)));
+				}
+
+				if (i % instancesPerTransaction == instancesPerTransaction - 1 || i == instances) {
+					connection.commit();
+				}
+			}
+		} catch (IOException e) {
+			throw new RuntimeException(e);
+		} finally {
+			if (connection.isActive()) {
+				connection.rollback();
+			}
+		}
+	}
+
 	@Setup(Level.Invocation)
 	public void beforeClass() {
 		if (connection != null) {
@@ -158,7 +206,7 @@ public class InferencingBenchmark {
 
 		LmdbStoreConfig config = new LmdbStoreConfig();
 		config.setForceSync(false);
-		LmdbStore store = new LmdbStore(file, config);
+		NotifyingSail store = new LmdbStore(file, config);
 		NumerateWebInferencer sail = new NumerateWebInferencer(store);
 
 		repository = new SailRepository(sail);
