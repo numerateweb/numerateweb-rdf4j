@@ -3,10 +3,8 @@ package org.numerateweb.rdf4j;
 import com.google.inject.AbstractModule;
 import com.google.inject.Guice;
 import com.google.inject.Injector;
-import net.enilink.commons.util.Pair;
 import net.enilink.komma.core.IReference;
 import net.enilink.komma.core.KommaModule;
-import net.enilink.komma.em.ManagerCompositionModule;
 import net.enilink.komma.literals.LiteralConverter;
 import net.enilink.komma.rdf4j.RDF4JValueConverter;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
@@ -90,7 +88,7 @@ public class NumerateWebInferencer extends NotifyingSailWrapper {
 	public void init() throws SailException {
 		super.init();
 		KommaModule module = new NWMathModule();
-		injector = Guice.createInjector(new ManagerCompositionModule(module), new AbstractModule() {
+		injector = Guice.createInjector(new LiteralConverterModule(module), new AbstractModule() {
 			@Override
 			protected void configure() {
 				bind(Locale.class).toInstance(Locale.getDefault());
