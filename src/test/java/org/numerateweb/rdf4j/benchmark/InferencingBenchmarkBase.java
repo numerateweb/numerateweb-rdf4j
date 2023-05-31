@@ -1,5 +1,5 @@
 /*******************************************************************************
- * Copyright (c) 2021 Eclipse RDF4J contributors.
+ * Copyright (c) 2023 Eclipse RDF4J contributors.
  *
  * All rights reserved. This program and the accompanying materials
  * are made available under the terms of the Eclipse Distribution License v1.0
@@ -24,8 +24,10 @@ import org.eclipse.rdf4j.rio.RDFFormat;
 import org.eclipse.rdf4j.sail.NotifyingSail;
 import org.eclipse.rdf4j.sail.lmdb.LmdbStore;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
+import org.eclipse.rdf4j.sail.memory.MemoryStore;
 import org.numerateweb.rdf4j.NumerateWebInferencer;
 import org.openjdk.jmh.annotations.*;
+import org.openjdk.jmh.infra.BenchmarkParams;
 import org.openjdk.jmh.runner.Runner;
 import org.openjdk.jmh.runner.RunnerException;
 import org.openjdk.jmh.runner.options.Options;
@@ -45,7 +47,10 @@ import java.util.concurrent.TimeUnit;
 @Fork(value = 1, jvmArgs = {"-Xms2G", "-Xmx3G", "-Xmn1G"})
 @Measurement(iterations = 5)
 @OutputTimeUnit(TimeUnit.MILLISECONDS)
-public class InferencingBenchmark {
+public abstract class InferencingBenchmarkBase {
+
+	@Param({"5"})
+	int classes;
 
 	@Param({"5"})
 	int constraintsPerClass;
@@ -56,24 +61,12 @@ public class InferencingBenchmark {
 	@Param({"1"})
 	int uniquePropertiesPerConstraint;
 
-	@Param({"10000"})
-	int instances;
+	@Param({"2000"})
+	int instancesPerClass;
 
-	@Param({"1000"})
-	int instancesPerTransaction;
-
-	private SailRepository repository;
-	private SailRepositoryConnection connection;
-	private File file;
-
-	public static void main(String[] args) throws RunnerException {
-		Options opt = new OptionsBuilder()
-				.include("InferencingBenchmark") // adapt to control which benchmark tests to run
-				.forks(1)
-				.build();
-
-		new Runner(opt).run();
-	}
+	SailRepository repository;
+	SailRepositoryConnection connection;
+	File file;
 
 	void createConstraints(String ns, Resource targetClass) {
 		ValueFactory vf = repository.getValueFactory();
@@ -116,8 +109,7 @@ public class InferencingBenchmark {
 		}
 	}
 
-	@Benchmark
-	public void fullInference() {
+	protected void addDataInOneTransaction() {
 		ValueFactory vf = repository.getValueFactory();
 		String ns = "http://example.org/";
 		Random rnd = new Random(1337);
@@ -126,67 +118,27 @@ public class InferencingBenchmark {
 		try {
 			connection.add(getClass().getResource("/benchmark-base.ttl"), RDFFormat.TURTLE);
 
-			IRI clazz = vf.createIRI(ns + "Object");
-			createConstraints(ns, clazz);
+			for (int c = 0; c < classes; c++) {
+				IRI clazz = vf.createIRI(ns + "Class-" + c);
+				createConstraints(ns, clazz);
 
-			for (int i = 0; i < instances; i++) {
-				Resource r = vf.createIRI(ns + "instance" + i);
-				connection.add(r, RDF.TYPE, clazz);
-				for (int c = 0; c < constraintsPerClass; c++) {
-					for (int p = 0; p < uniquePropertiesPerConstraint; p++) {
-						connection.add(r, vf.createIRI(ns + "p" + c + "-" + p), vf.createLiteral(1 + rnd.nextInt(10)));
+				for (int i = 0; i < instancesPerClass; i++) {
+					Resource r = vf.createIRI(ns + "instance-" + c + "-" + i);
+					connection.add(r, RDF.TYPE, clazz);
+					for (int cNr = 0; cNr < constraintsPerClass; cNr++) {
+						for (int p = 0; p < uniquePropertiesPerConstraint; p++) {
+							connection.add(r, vf.createIRI(ns + "p" + cNr + "-" + p),
+									vf.createLiteral(1 + rnd.nextInt(10)));
+						}
 					}
-				}
 
-				for (int p = 0; p < sharedPropertiesPerConstraint; p++) {
-					connection.add(r, vf.createIRI(ns + "p" + p), vf.createLiteral(1 + rnd.nextInt(10)));
+					for (int p = 0; p < sharedPropertiesPerConstraint; p++) {
+						connection.add(r, vf.createIRI(ns + "p" + p),
+								vf.createLiteral(1 + rnd.nextInt(10)));
+					}
 				}
 			}
 			connection.commit();
-		} catch (IOException e) {
-			throw new RuntimeException(e);
-		} finally {
-			if (connection.isActive()) {
-				connection.rollback();
-			}
-		}
-	}
-
-	@Benchmark
-	public void incrementalInference() {
-		ValueFactory vf = repository.getValueFactory();
-		String ns = "http://example.org/";
-		Random rnd = new Random(1337);
-
-		try {
-			IRI clazz = vf.createIRI(ns + "Object");
-
-			connection.begin(IsolationLevels.NONE);
-			connection.add(getClass().getResource("/benchmark-base.ttl"), RDFFormat.TURTLE);
-			createConstraints(ns, clazz);
-			connection.commit();
-
-			for (int i = 0; i < instances; i++) {
-				if (i % instancesPerTransaction == 0) {
-					connection.begin(IsolationLevels.NONE);
-				}
-
-				Resource r = vf.createIRI(ns + "instance" + i);
-				connection.add(r, RDF.TYPE, clazz);
-				for (int c = 0; c < constraintsPerClass; c++) {
-					for (int p = 0; p < uniquePropertiesPerConstraint; p++) {
-						connection.add(r, vf.createIRI(ns + "p" + c + "-" + p), vf.createLiteral(1 + rnd.nextInt(10)));
-					}
-				}
-
-				for (int p = 0; p < sharedPropertiesPerConstraint; p++) {
-					connection.add(r, vf.createIRI(ns + "p" + p), vf.createLiteral(1 + rnd.nextInt(10)));
-				}
-
-				if (i % instancesPerTransaction == instancesPerTransaction - 1 || i == instances) {
-					connection.commit();
-				}
-			}
 		} catch (IOException e) {
 			throw new RuntimeException(e);
 		} finally {
@@ -197,16 +149,17 @@ public class InferencingBenchmark {
 	}
 
 	@Setup(Level.Invocation)
-	public void beforeClass() {
+	public void beforeClass(BenchmarkParams params) {
 		if (connection != null) {
 			connection.close();
 			connection = null;
 		}
 		file = Files.newTemporaryFolder();
 
-		LmdbStoreConfig config = new LmdbStoreConfig();
+		/*LmdbStoreConfig config = new LmdbStoreConfig();
 		config.setForceSync(false);
-		NotifyingSail store = new LmdbStore(file, config);
+		NotifyingSail store = new LmdbStore(file, config);*/
+		MemoryStore store = new MemoryStore();
 		NumerateWebInferencer sail = new NumerateWebInferencer(store);
 
 		repository = new SailRepository(sail);

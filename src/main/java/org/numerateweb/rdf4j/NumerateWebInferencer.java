@@ -15,6 +15,7 @@ import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
+import org.eclipse.rdf4j.model.vocabulary.RDFS;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.Dataset;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
@@ -74,7 +75,9 @@ public class NumerateWebInferencer extends NotifyingSailWrapper {
 	protected Rdf4jModelAccess modelAccess;
 	volatile boolean inferencing = false;
 	IRI USED_BY;
+	IRI CONSTRAINT_PROPERTY;
 	private Set<Resource> changedResources = new HashSet<>();
+	private Set<Resource> changedClasses = new HashSet<>();
 
 	public NumerateWebInferencer() {
 		super();
@@ -98,6 +101,7 @@ public class NumerateWebInferencer extends NotifyingSailWrapper {
 		valueConverter = injector.getInstance(RDF4JValueConverter.class);
 		literalConverter = injector.getInstance(LiteralConverter.class);
 		USED_BY = getValueFactory().createIRI("math:usedBy");
+		CONSTRAINT_PROPERTY = getValueFactory().createIRI(NWRULES.PROPERTY_CONSTRAINT.toString());
 		Supplier<SailConnection> connSupplier = () -> this.connection.get();
 		SimpleDataset dataset = new SimpleDataset();
 		Supplier<Dataset> datasetSupplier = () -> dataset;
@@ -114,11 +118,9 @@ public class NumerateWebInferencer extends NotifyingSailWrapper {
 		if (inferencing) {
 			return;
 		}
-		try {
-			inferencing = true;
-			changedResources.add(stmt.getSubject());
-		} finally {
-			inferencing = false;
+		changedResources.add(stmt.getSubject());
+		if (CONSTRAINT_PROPERTY.equals(stmt.getPredicate()) || RDFS.SUBCLASSOF.equals(stmt.getPredicate())) {
+			changedClasses.add(stmt.getSubject());
 		}
 
 		// handle changes of resource types
@@ -184,6 +186,7 @@ public class NumerateWebInferencer extends NotifyingSailWrapper {
 			}
 		}
 		changedResources.clear();
+		changedClasses.clear();
 	}
 
 	public void doFullInferencing(SailConnection connection) {
