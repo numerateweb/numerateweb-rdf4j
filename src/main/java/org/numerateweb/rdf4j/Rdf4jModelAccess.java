@@ -1,5 +1,7 @@
 package org.numerateweb.rdf4j;
 
+import com.google.common.cache.Cache;
+import com.google.common.cache.CacheBuilder;
 import com.google.inject.TypeLiteral;
 import net.enilink.commons.iterator.IExtendedIterator;
 import net.enilink.commons.iterator.WrappedIterator;
@@ -38,6 +40,7 @@ import org.parboiled.parserunners.ReportingParseRunner;
 import org.parboiled.support.ParsingResult;
 
 import java.util.*;
+import java.util.concurrent.ExecutionException;
 import java.util.function.Supplier;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
@@ -109,9 +112,10 @@ class Rdf4jModelAccess implements IModelAccess {
 	private final RDF4JValueConverter valueConverter;
 	private final LiteralConverter literalConverter;
 	private final Map<Resource, Map<IReference, ResultSpec<OMObject>>> classToConstraints = new HashMap<>();
-	private ICache<Resource, List<Resource>> resourceTypes;
 	private final Set<Pair<Resource, Resource>> dependencyCache = new HashSet<>();
 	private final Map<IReference, IRI> propertyCache = new HashMap<>();
+	private ICache<Resource, List<Resource>> resourceTypes;
+	private Cache<String, OMObject> expressionCache = CacheBuilder.newBuilder().maximumSize(10000).build();
 
 	public Rdf4jModelAccess(LiteralConverter literalConverter, ValueFactory valueFactory,
 	                        Supplier<SailConnection> connection, Supplier<Dataset> dataset,
@@ -232,17 +236,22 @@ class Rdf4jModelAccess implements IModelAccess {
 							org.eclipse.rdf4j.model.Statement stmt = stmts.next();
 							String expString = ((org.eclipse.rdf4j.model.Literal) stmt.getObject()).getLabel();
 
-							INamespaces namespaces = getNamespaces(stmt.getSubject());
-							PopcornParser popcornParser = Parboiled.createParser(PopcornParser.class, namespaces);
-							ParsingResult<Object> result = new ReportingParseRunner<>(popcornParser.Expr()).run(expString);
-							if (result.matched && result.resultValue != null) {
-								mathObj = (OMObject) result.resultValue;
-							} else {
-								// an error has occurred during parsing
-								mathObj = OMObject.OME(new OMObject[]{OMObject.OMS("nw:error"),
-										OMObject.OMSTR(ErrorUtils.printParseErrors(result))});
-							}
+							mathObj = expressionCache.get(expString, () -> {
+								INamespaces namespaces = getNamespaces(stmt.getSubject());
+								PopcornParser popcornParser = Parboiled.createParser(PopcornParser.class, namespaces);
+								ParsingResult<Object> result = new ReportingParseRunner<>(popcornParser.Expr()).run(expString);
+								if (result.matched && result.resultValue != null) {
+									return (OMObject) result.resultValue;
+								} else {
+									// an error has occurred during parsing
+									return OMObject.OME(new OMObject[]{OMObject.OMS("nw:error"),
+											OMObject.OMSTR(ErrorUtils.printParseErrors(result))});
+								}
+							});
 						}
+					} catch (ExecutionException e) {
+						mathObj = OMObject.OME(new OMObject[]{OMObject.OMS("nw:error"),
+								OMObject.OMSTR(e.toString())});
 					}
 					if (mathObj == null) {
 						mathObj = parseExpression(constraintResource);
