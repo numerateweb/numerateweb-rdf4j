@@ -49,7 +49,7 @@ import java.util.concurrent.TimeUnit;
 @OutputTimeUnit(TimeUnit.MILLISECONDS)
 public abstract class InferencingBenchmarkBase {
 
-	@Param({"5"})
+	@Param({"2000"})
 	int classes;
 
 	@Param({"5"})
@@ -61,7 +61,7 @@ public abstract class InferencingBenchmarkBase {
 	@Param({"1"})
 	int uniquePropertiesPerConstraint;
 
-	@Param({"2000"})
+	@Param({"5"})
 	int instancesPerClass;
 
 	SailRepository repository;
@@ -160,13 +160,15 @@ public abstract class InferencingBenchmarkBase {
 		config.setForceSync(false);
 		NotifyingSail store = new LmdbStore(file, config);*/
 		MemoryStore store = new MemoryStore();
-		NumerateWebInferencer sail = new NumerateWebInferencer(store);
+		NumerateWebInferencer sail = createInferencer(store);
 
 		repository = new SailRepository(sail);
 		connection = repository.getConnection();
 
 		System.gc();
 	}
+
+	protected abstract NumerateWebInferencer createInferencer(NotifyingSail store);
 
 	@TearDown(Level.Invocation)
 	public void afterClass() throws IOException {

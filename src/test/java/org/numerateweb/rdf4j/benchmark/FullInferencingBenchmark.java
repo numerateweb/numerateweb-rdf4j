@@ -11,6 +11,8 @@
 
 package org.numerateweb.rdf4j.benchmark;
 
+import org.eclipse.rdf4j.sail.NotifyingSail;
+import org.numerateweb.rdf4j.NumerateWebInferencer;
 import org.openjdk.jmh.annotations.Benchmark;
 import org.openjdk.jmh.runner.Runner;
 import org.openjdk.jmh.runner.RunnerException;
@@ -34,5 +36,12 @@ public class FullInferencingBenchmark extends InferencingBenchmarkBase {
 	@Benchmark
 	public void fullInference() {
 		addDataInOneTransaction();
+	}
+
+	@Override
+	protected NumerateWebInferencer createInferencer(NotifyingSail store) {
+		NumerateWebInferencer inferencer = new NumerateWebInferencer(store);
+		inferencer.setEnableIncrementalInferencing(false);
+		return inferencer;
 	}
 }

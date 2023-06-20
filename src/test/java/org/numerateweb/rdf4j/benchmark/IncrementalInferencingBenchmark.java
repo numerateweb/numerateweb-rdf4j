@@ -13,6 +13,8 @@ package org.numerateweb.rdf4j.benchmark;
 
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.ValueFactory;
+import org.eclipse.rdf4j.sail.NotifyingSail;
+import org.numerateweb.rdf4j.NumerateWebInferencer;
 import org.openjdk.jmh.annotations.Benchmark;
 import org.openjdk.jmh.annotations.Param;
 import org.openjdk.jmh.infra.BenchmarkParams;
@@ -83,5 +85,12 @@ public class IncrementalInferencingBenchmark extends InferencingBenchmarkBase {
 		super.beforeClass(params);
 		addDataInOneTransaction();
 		System.gc();
+	}
+
+	@Override
+	protected NumerateWebInferencer createInferencer(NotifyingSail store) {
+		NumerateWebInferencer inferencer = new NumerateWebInferencer(store);
+		inferencer.setEnableIncrementalInferencing(true);
+		return inferencer;
 	}
 }
