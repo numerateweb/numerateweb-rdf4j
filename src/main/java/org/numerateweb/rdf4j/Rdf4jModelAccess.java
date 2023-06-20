@@ -20,6 +20,7 @@ import org.eclipse.rdf4j.query.Dataset;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.QueryLanguage;
 import org.eclipse.rdf4j.query.impl.ListBindingSet;
+import org.eclipse.rdf4j.query.impl.SimpleDataset;
 import org.eclipse.rdf4j.query.parser.ParsedQuery;
 import org.eclipse.rdf4j.query.parser.QueryParserUtil;
 import org.eclipse.rdf4j.sail.SailConnection;
@@ -38,6 +39,8 @@ import org.parboiled.Parboiled;
 import org.parboiled.errors.ErrorUtils;
 import org.parboiled.parserunners.ReportingParseRunner;
 import org.parboiled.support.ParsingResult;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.util.*;
 import java.util.concurrent.ExecutionException;
@@ -46,6 +49,7 @@ import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
 class Rdf4jModelAccess implements IModelAccess {
+	private static final Dataset ALL_GRAPHS = new SimpleDataset();
 	protected static final String MATH_OBJECT_QUERY = new StringBuilder()
 			.append("prefix rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> ")
 			.append("prefix math: <http://numerateweb.org/vocab/math#> ")
@@ -59,6 +63,7 @@ class Rdf4jModelAccess implements IModelAccess {
 			.append("}").toString();
 	protected static final ParsedQuery mathObjectQuery = QueryParserUtil.parseQuery(QueryLanguage.SPARQL, MATH_OBJECT_QUERY,
 			null);
+	static final Resource[] EMPTY_CTX = new Resource[0];
 	static final String PREFIX = "PREFIX rdf: <" + RDF.NAMESPACE
 			+ "> PREFIX rdfs: <" + RDFS.NAMESPACE + "> PREFIX owl: <"
 			+ OWL.NAMESPACE + "> PREFIX sh: <" + SHACL.NAMESPACE + "> ";
@@ -94,9 +99,11 @@ class Rdf4jModelAccess implements IModelAccess {
 			return defaultNamespaces.length + 1;
 		}
 	};
+	static private final Logger logger = LoggerFactory.getLogger(Rdf4jModelAccess.class);
 	private static final String CONSTRAINT_QUERY = PREFIX + SparqlUtils.prefix("mathrl", NWRULES.NAMESPACE)
-			+ "SELECT distinct ?constraint ?property WHERE { " //
-			+ "?c mathrl:constraint ?constraint . ?constraint mathrl:onProperty ?property " //
+			+ "SELECT distinct ?constraint ?property { " //
+			+ "{ graph ?g { ?c mathrl:constraint ?constraint } } union { ?c mathrl:constraint ?constraint filter (!bound(?g)) } "
+			+ "?constraint mathrl:onProperty ?property " //
 			+ "}";
 	protected static final ParsedQuery constraintQuery = QueryParserUtil.parseQuery(QueryLanguage.SPARQL, CONSTRAINT_QUERY,
 			null);
@@ -108,21 +115,35 @@ class Rdf4jModelAccess implements IModelAccess {
 	private final ParsedQuery namespacesQuery = QueryParserUtil.parseQuery(QueryLanguage.SPARQL, PREFIX +
 			"SELECT DISTINCT ?prefix ?namespace WHERE { ?resource sh:prefixes/owl:imports*/sh:declare [ sh:prefix ?prefix ; sh:namespace ?namespace ] }", null);
 	private final Supplier<SailConnection> connection;
+	private final Supplier<Resource[]> context;
 	private final Supplier<Dataset> dataset;
 	private final RDF4JValueConverter valueConverter;
 	private final LiteralConverter literalConverter;
-	private final Map<Resource, Map<IReference, ResultSpec<OMObject>>> classToConstraints = new HashMap<>();
-	private final Set<Pair<Resource, Resource>> dependencyCache = new HashSet<>();
+	private final Map<Resource, List<ConstraintInfo>> classToConstraints = new HashMap<>();
 	private final Map<IReference, IRI> propertyCache = new HashMap<>();
+	private Cache<Pair<Resource, Resource>, Boolean> dependencyCache = CacheBuilder.newBuilder().maximumSize(100000).build();
 	private ICache<Resource, List<Resource>> resourceTypes;
 	private Cache<String, OMObject> expressionCache = CacheBuilder.newBuilder().maximumSize(10000).build();
 
+	static class ConstraintInfo {
+		final Resource graph;
+		final IReference property;
+		final ResultSpec<OMObject> mathObj;
+
+		ConstraintInfo(Resource graph, IReference property, ResultSpec<OMObject> mathObj) {
+			this.graph = graph;
+			this.property = property;
+			this.mathObj = mathObj;
+		}
+	}
+
 	public Rdf4jModelAccess(LiteralConverter literalConverter, ValueFactory valueFactory,
-	                        Supplier<SailConnection> connection, Supplier<Dataset> dataset,
-	                        CacheManager cacheManager) {
+	                        Supplier<SailConnection> connection, Supplier<Resource[]> context,
+	                        Supplier<Dataset> dataset, CacheManager cacheManager) {
 		this.literalConverter = literalConverter;
 		this.valueFactory = valueFactory;
 		this.connection = connection;
+		this.context = context;
 		this.dataset = dataset;
 		this.valueConverter = new RDF4JValueConverter(valueFactory);
 		this.resourceTypes = cacheManager.get(new TypeLiteral<>() {
@@ -171,7 +192,7 @@ class Rdf4jModelAccess implements IModelAccess {
 			return result.value;
 		}
 		List<Resource> types = ((SailConnectionWrapper) connection.get()).getWrappedConnection().
-				getStatements(resource, RDF.TYPE, null, false)
+				getStatements(resource, RDF.TYPE, null, false, readContext())
 				.stream().map(org.eclipse.rdf4j.model.Statement::getObject)
 				.filter(r -> r instanceof Resource).map(r -> (Resource) r)
 				.collect(Collectors.toList());
@@ -183,7 +204,7 @@ class Rdf4jModelAccess implements IModelAccess {
 		Set<Resource> classes = new HashSet<>();
 		BindingSet bindingSet = new ListBindingSet(List.of("subClass"), List.of(clazz));
 		try (CloseableIteration<? extends BindingSet, QueryEvaluationException> bindingsIter = connection.get()
-				.evaluate(directSuperClassesQuery.getTupleExpr(), dataset.get(), bindingSet, false)) {
+				.evaluate(directSuperClassesQuery.getTupleExpr(), ALL_GRAPHS, bindingSet, false)) {
 			while (bindingsIter.hasNext()) {
 				BindingSet bindings = bindingsIter.next();
 				classes.add((Resource) bindings.getValue("superClass"));
@@ -195,11 +216,16 @@ class Rdf4jModelAccess implements IModelAccess {
 	@Override
 	public ResultSpec<OMObject> getExpressionSpec(Object subject, IReference property) {
 		Resource subjectResource = (Resource) subject;
+		Set<IRI> graphs = dataset.get().getDefaultGraphs();
 		for (Resource clazz : sort(getDirectClasses(subjectResource))) {
-			Map<IReference, ResultSpec<OMObject>> constraints = getConstraintsForClass(clazz);
-			ResultSpec<OMObject> expressionSpec = constraints.get(property);
-			if (expressionSpec != null) {
-				return expressionSpec;
+			Stream<ConstraintInfo> constraints = getConstraintsForClass(clazz).stream()
+					.filter(c -> property.equals(c.property) &&
+							// only consider accessible graphs
+							c.graph == null || graphs.contains(c.graph));
+
+			Optional<ConstraintInfo> c = constraints.findFirst();
+			if (c.isPresent()) {
+				return c.get().mathObj;
 			}
 		}
 		return ResultSpec.empty();
@@ -207,31 +233,44 @@ class Rdf4jModelAccess implements IModelAccess {
 
 	public Set<IReference> getPropertiesWithConstraintsOfResource(Resource resource) {
 		Set<IReference> properties = new HashSet<>();
+		Set<IRI> graphs = dataset.get().getDefaultGraphs();
 		for (Resource clazz : sort(getDirectClasses(resource))) {
-			properties.addAll(getConstraintsForClass(clazz).keySet());
+			Stream<ConstraintInfo> constraints = getConstraintsForClass(clazz).stream();
+			if (! graphs.isEmpty()) {
+				// only consider accessible graphs
+				constraints = constraints.filter(c -> c.graph == null || graphs.contains(c.graph));
+			}
+			constraints.forEach(c -> properties.add(c.property));
 		}
 		return properties;
 	}
 
-	protected Map<IReference, ResultSpec<OMObject>> getConstraintsForClass(Resource clazz) {
-		Map<IReference, ResultSpec<OMObject>> constraints = classToConstraints.get(clazz);
+	protected List<ConstraintInfo> getConstraintsForClass(Resource clazz) {
+		List<ConstraintInfo> constraints = classToConstraints.get(clazz);
 		if (constraints == null) {
-			constraints = new HashMap<>();
+			constraints = new ArrayList<>();
 			classToConstraints.put(clazz, constraints);
 
 			BindingSet bindingSet = new ListBindingSet(List.of("c"), List.of(clazz));
 			try (CloseableIteration<? extends BindingSet, QueryEvaluationException> bindingsIter = connection.get()
-					.evaluate(constraintQuery.getTupleExpr(), dataset.get(), bindingSet, false)) {
+					.evaluate(constraintQuery.getTupleExpr(), ALL_GRAPHS, bindingSet, false)) {
 				while (bindingsIter.hasNext()) {
 					BindingSet bindings = bindingsIter.next();
 					Resource constraintResource = (Resource) bindings.getValue("constraint");
 					Resource propertyResource = (IRI) bindings.getValue("property");
+					Resource definingGraph = (IRI) bindings.getValue("g");
 
+					Resource[] readCtx;
+					if (definingGraph != null) {
+						readCtx = new Resource[] { definingGraph };
+					} else {
+						readCtx = EMPTY_CTX;
+					}
 					OMObject mathObj = null;
 					try (CloseableIteration<? extends org.eclipse.rdf4j.model.Statement, SailException> stmts =
 							     connection.get().getStatements(constraintResource,
-									     valueConverter.toRdf4j(NWRULES.NAMESPACE_URI.appendLocalPart("expressionString")), null, false,
-									     dataset.get().getDefaultGraphs().toArray(new Resource[dataset.get().getDefaultGraphs().size()]))) {
+									     valueConverter.toRdf4j(NWRULES.NAMESPACE_URI.appendLocalPart("expressionString")),
+									     null, false, readCtx)) {
 						if (stmts.hasNext()) {
 							org.eclipse.rdf4j.model.Statement stmt = stmts.next();
 							String expString = ((org.eclipse.rdf4j.model.Literal) stmt.getObject()).getLabel();
@@ -256,18 +295,15 @@ class Rdf4jModelAccess implements IModelAccess {
 					if (mathObj == null) {
 						mathObj = parseExpression(constraintResource);
 					}
-					constraints.put(valueConverter.fromRdf4j(propertyResource),
-							ResultSpec.create(Cardinality.SINGLE, mathObj));
+					constraints.add(new ConstraintInfo(definingGraph, valueConverter.fromRdf4j(propertyResource),
+							ResultSpec.create(Cardinality.SINGLE, mathObj)));
 				}
 			}
 
 			// add inherited constraints from super classes
 			for (Resource superClass : sort(getDirectSuperClasses(clazz))) {
-				for (Map.Entry<IReference, ResultSpec<OMObject>> superConstraint : getConstraintsForClass(superClass).entrySet()) {
-					if (!constraints.containsKey(superConstraint.getKey())) {
-						constraints.put(superConstraint.getKey(), superConstraint.getValue());
-					}
-				}
+				// order is important here, super constraints must come last
+				constraints.addAll(getConstraintsForClass(superClass));
 			}
 		}
 		return constraints;
@@ -313,12 +349,14 @@ class Rdf4jModelAccess implements IModelAccess {
 	                                              Optional<IReference> restriction) {
 		SailConnection baseConn = ((SailConnectionWrapper) connection.get()).getWrappedConnection();
 		IRI propertyIri = propertyCache.computeIfAbsent(property, p -> (IRI) valueConverter.toRdf4j(p));
+		var readCtx = readContext();
 		Stream<? extends org.eclipse.rdf4j.model.Statement> stmts = baseConn.getStatements((Resource) subject,
-				propertyIri, null, false).stream();
+				propertyIri, null, false, readCtx).stream();
 		if (restriction.isPresent()) {
 			Resource restrictionResource = valueConverter.toRdf4j(restriction.get());
 			stmts = stmts.filter(stmt -> stmt.getObject().isLiteral() ? true :
-					baseConn.hasStatement((Resource) stmt.getObject(), RDF.TYPE, restrictionResource, true));
+					baseConn.hasStatement((Resource) stmt.getObject(), RDF.TYPE, restrictionResource,
+							true, readCtx));
 		}
 		return WrappedIterator.create(stmts.map(stmt -> {
 			if (stmt.getObject().isLiteral()) {
@@ -347,20 +385,41 @@ class Rdf4jModelAccess implements IModelAccess {
 				rdfValue = valueConverter.toRdf4j(literalConverter.createLiteral(value, null));
 			}
 			((InferencerConnection) connection.get()).addInferredStatement((Resource) subject,
-					(IRI) valueConverter.toRdf4j(property), rdfValue);
+					(IRI) valueConverter.toRdf4j(property), rdfValue, writeContext());
 		}
 		//System.out.println(String.format("%s: %s = %s", subject, property, results));
 	}
 
+	Resource[] readContext() {
+		Resource[] graphs = context.get();
+		return graphs != null ? graphs : EMPTY_CTX;
+	}
+
+	Resource[] writeContext() {
+		Resource[] graphs = context.get();
+		Resource[] writeCtx;
+		if (graphs != null && graphs.length > 0) {
+			writeCtx = new Resource[]{graphs[0]};
+		} else {
+			writeCtx = EMPTY_CTX;
+		}
+		return writeCtx;
+	}
+
 	void addDependency(Pair<Object, IReference> from, Pair<Object, IReference> to) {
-		if (dependencyCache.add(new Pair<>((Resource) from.getFirst(), (Resource) to.getFirst()))) {
-			((InferencerConnection) connection.get()).addInferredStatement((Resource) to.getFirst(),
-					USED_BY, (Resource) from.getFirst());
+		try {
+			dependencyCache.get(new Pair<>((Resource) from.getFirst(), (Resource) to.getFirst()), () -> {
+				((InferencerConnection) connection.get()).addInferredStatement((Resource) to.getFirst(),
+						USED_BY, (Resource) from.getFirst(), writeContext());
+				return true;
+			});
+		} catch (ExecutionException e) {
+			logger.error("Error while storing dependency", e);
 		}
 	}
 
 	void clearDependencyCache() {
-		dependencyCache.clear();
+		dependencyCache.invalidateAll();
 	}
 
 	public void invalidateType(Resource subject) {

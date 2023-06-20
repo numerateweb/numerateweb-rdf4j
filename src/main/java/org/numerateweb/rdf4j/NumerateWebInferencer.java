@@ -33,8 +33,6 @@ import org.eclipse.rdf4j.sail.inferencer.InferencerConnection;
 import org.numerateweb.math.rdf.NWMathModule;
 import org.numerateweb.math.rdf.rules.NWRULES;
 import org.numerateweb.math.reasoner.CacheManager;
-import org.numerateweb.math.reasoner.ICache;
-import org.numerateweb.math.reasoner.ICacheFactory;
 import org.numerateweb.math.util.SparqlUtils;
 
 import java.util.*;
@@ -60,12 +58,7 @@ public class NumerateWebInferencer extends NotifyingSailWrapper {
 	protected static final ParsedQuery invalidTargetsQuery = QueryParserUtil.parseQuery(QueryLanguage.SPARQL, INVALID_TARGETS_QUERY,
 			null);
 	private static final IsolationLevels READ_COMMITTED = IsolationLevels.READ_COMMITTED;
-	protected final CacheManager cacheManager = new CacheManager(new ICacheFactory() {
-		@Override
-		public <K, V> ICache<K, V> create() {
-			return new GuavaCache<>();
-		}
-	});
+	protected final CacheManager cacheManager = new CacheManager(GuavaCache::new);
 	protected Injector injector;
 	protected RDF4JValueConverter valueConverter;
 	protected LiteralConverter literalConverter;
@@ -78,6 +71,8 @@ public class NumerateWebInferencer extends NotifyingSailWrapper {
 	IRI CONSTRAINT_PROPERTY;
 	private Set<Resource> changedResources = new HashSet<>();
 	private Set<Resource> changedClasses = new HashSet<>();
+
+	private boolean enableIncrementalInferencing = true;
 
 	public NumerateWebInferencer() {
 		super();
@@ -104,9 +99,10 @@ public class NumerateWebInferencer extends NotifyingSailWrapper {
 		CONSTRAINT_PROPERTY = getValueFactory().createIRI(NWRULES.PROPERTY_CONSTRAINT.toString());
 		Supplier<SailConnection> connSupplier = () -> this.connection.get();
 		SimpleDataset dataset = new SimpleDataset();
+		Supplier<Resource[]> contextSupplier = () -> null;
 		Supplier<Dataset> datasetSupplier = () -> dataset;
 		modelAccess = new Rdf4jModelAccess(literalConverter,
-				getValueFactory(), connSupplier, datasetSupplier, cacheManager);
+				getValueFactory(), connSupplier, contextSupplier, datasetSupplier, cacheManager);
 	}
 
 	@Override
@@ -144,7 +140,7 @@ public class NumerateWebInferencer extends NotifyingSailWrapper {
 			modelAccess.clearDependencyCache();
 
 			this.connection.set(connection);
-			if (!initialInferencingDone) {
+			if (!initialInferencingDone || !enableIncrementalInferencing) {
 				doFullInferencing(connection);
 				initialInferencingDone = true;
 			} else {
@@ -160,6 +156,8 @@ public class NumerateWebInferencer extends NotifyingSailWrapper {
 		for (Resource instance : changedResources) {
 			toUpdate.add(instance);
 
+			Resource[] writeCtx = Rdf4jModelAccess.EMPTY_CTX;
+
 			Rdf4jEvaluator evaluator = evaluators.get(null);
 			Set<IReference> properties = modelAccess.getPropertiesWithConstraintsOfResource(instance);
 			for (IReference property : properties) {
@@ -167,12 +165,13 @@ public class NumerateWebInferencer extends NotifyingSailWrapper {
 					evaluator.invalidateCache(instance, property);
 				}
 				((InferencerConnection) connection).removeInferredStatement(instance,
-						(IRI) valueConverter.toRdf4j(property), null);
+						(IRI) valueConverter.toRdf4j(property), null, writeCtx);
 			}
 			if (!properties.isEmpty()) {
-				connection.getStatements(instance, USED_BY, null, true).stream().forEach(stmt -> {
+				connection.getStatements(instance, USED_BY, null, true, writeCtx).stream().forEach(stmt -> {
 					toUpdate.add((Resource) stmt.getObject());
-					((InferencerConnection) connection).removeInferredStatement(instance, USED_BY, stmt.getObject());
+					((InferencerConnection) connection).removeInferredStatement(instance, USED_BY,
+							stmt.getObject(), writeCtx);
 				});
 			}
 		}
@@ -190,6 +189,9 @@ public class NumerateWebInferencer extends NotifyingSailWrapper {
 	}
 
 	public void doFullInferencing(SailConnection connection) {
+		// remove all usedBy statements
+		((InferencerConnection) connection).removeInferredStatement(null, USED_BY, null);
+
 		SimpleDataset dataset = new SimpleDataset();
 		BindingSet bindingSet = new ListBindingSet(List.of(), List.of());
 		try (CloseableIteration<? extends BindingSet, QueryEvaluationException> bindingsIter = connection
@@ -228,5 +230,13 @@ public class NumerateWebInferencer extends NotifyingSailWrapper {
 			}
 		}
 		return levels;
+	}
+
+	public void setEnableIncrementalInferencing(boolean enableIncrementalInferencing) {
+		this.enableIncrementalInferencing = enableIncrementalInferencing;
+	}
+
+	public boolean getEnableIncrementalInferencing() {
+		return enableIncrementalInferencing;
 	}
 }
