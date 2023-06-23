@@ -31,8 +31,8 @@ public class InferencingTest {
 		connection.add(declaration, SHACL.NAMESPACE_PROP, vf.createLiteral(NS));
 	}
 
-	void createConstraints(RepositoryConnection connection, Resource targetClass,
-	                       Resource targetProperty, String expression) {
+	void createConstraint(RepositoryConnection connection, Resource targetClass,
+	                      Resource targetProperty, String expression) {
 		ValueFactory vf = connection.getValueFactory();
 		String nw = "http://numerateweb.org/vocab/math/rules#";
 		IRI constraintClass = vf.createIRI(nw + "Constraint");
@@ -55,33 +55,52 @@ public class InferencingTest {
 		Repository repository = new SailRepository(sail);
 		ValueFactory vf = repository.getValueFactory();
 
-		IRI targetClass = vf.createIRI(NS + "Rectangle");
-		IRI targetProperty = vf.createIRI(NS + "area");
+		IRI rectanglesClass =  vf.createIRI(NS + "Rectangles");
+		IRI rectangleProperty = vf.createIRI(NS + "rectangle");
+		Resource rectangles = vf.createIRI(NS + "rectangles");
+
+		IRI rectangleClass = vf.createIRI(NS + "Rectangle");
+		IRI areaProperty = vf.createIRI(NS + "area");
 		try (RepositoryConnection connection = repository.getConnection()) {
 			connection.begin(IsolationLevels.NONE);
 
 			createPrefixes(connection);
-			createConstraints(connection, targetClass, targetProperty, "@a * @b");
+			createConstraint(connection, rectanglesClass, areaProperty, "sum(@@rectangle, $r -> @area($r))");
+			createConstraint(connection, rectangleClass, areaProperty, "@a * @b");
+
+			connection.add(rectangles, RDF.TYPE, rectanglesClass);
 
 			for (int i = 0; i < 10; i++) {
 				Resource r = vf.createIRI(NS + "rect" + i);
-				connection.add(r, RDF.TYPE, targetClass);
+				connection.add(r, RDF.TYPE, rectangleClass);
 				connection.add(r, vf.createIRI(NS + "a"), vf.createLiteral(i));
 				connection.add(r, vf.createIRI(NS + "b"), vf.createLiteral(2 * i));
+
+				// add to list of all rectangles
+				connection.add(rectangles, rectangleProperty, r);
 			}
 			connection.commit();
 
+			int areaSum = 0;
 			for (int i = 0; i < 10; i++) {
 				Resource r = vf.createIRI(NS + "rect" + i);
 
-				try (RepositoryResult<Statement> result = connection.getStatements(r, targetProperty, null)) {
+				try (RepositoryResult<Statement> result = connection.getStatements(r, areaProperty, null)) {
 					Optional<Value> v = result.stream().map(st -> st.getObject()).findFirst();
 
 					assertTrue(v.isPresent());
 					assertTrue(v.get().isLiteral());
-					assertEquals(i * (2 * i), ((Literal) v.get()).intValue());
+					int area = i * (2 * i);
+					areaSum += area;
+					assertEquals("Area of rectangle " + r + " must be correct.", area, ((Literal) v.get()).intValue());
 				}
+			}
+			try (RepositoryResult<Statement> result = connection.getStatements(rectangles, areaProperty, null)) {
+				Optional<Value> v = result.stream().map(st -> st.getObject()).findFirst();
 
+				assertTrue(v.isPresent());
+				assertTrue(v.get().isLiteral());
+				assertEquals(areaSum, ((Literal) v.get()).intValue());
 			}
 		}
 
@@ -94,34 +113,54 @@ public class InferencingTest {
 		Repository repository = new SailRepository(sail);
 		ValueFactory vf = repository.getValueFactory();
 
-		IRI targetClass = vf.createIRI(NS + "Rectangle");
-		IRI targetProperty = vf.createIRI(NS + "area");
+		IRI rectanglesClass =  vf.createIRI(NS + "Rectangles");
+		IRI rectangleProperty = vf.createIRI(NS + "rectangle");
+		Resource rectangles = vf.createIRI(NS + "rectangles");
+
+		IRI rectangleClass = vf.createIRI(NS + "Rectangle");
+		IRI areaProperty = vf.createIRI(NS + "area");
 		try (RepositoryConnection connection = repository.getConnection()) {
 			connection.begin(IsolationLevels.NONE);
 
 			createPrefixes(connection);
-			createConstraints(connection, targetClass, targetProperty, "@a * @b");
+			createConstraint(connection, rectanglesClass, areaProperty, "sum(@@rectangle, $r -> @area($r))");
+			createConstraint(connection, rectangleClass, areaProperty, "@a * @b");
+
+			connection.add(rectangles, RDF.TYPE, rectanglesClass);
 
 			for (int i = 0; i < 5; i++) {
 				Resource r = vf.createIRI(NS + "rect" + i);
-				connection.add(r, RDF.TYPE, targetClass);
+				connection.add(r, RDF.TYPE, rectangleClass);
 				connection.add(r, vf.createIRI(NS + "a"), vf.createLiteral(i));
 				connection.add(r, vf.createIRI(NS + "b"), vf.createLiteral(2 * i));
+
+				// add to list of all rectangles
+				connection.add(rectangles, rectangleProperty, r);
 			}
 			connection.commit();
 		}
 
+		int areaSum = 0;
 		try (RepositoryConnection connection = repository.getConnection()) {
 			for (int i = 0; i < 5; i++) {
 				Resource r = vf.createIRI(NS + "rect" + i);
 
-				try (RepositoryResult<Statement> result = connection.getStatements(r, targetProperty, null)) {
+				try (RepositoryResult<Statement> result = connection.getStatements(r, areaProperty, null)) {
 					Optional<Value> v = result.stream().map(st -> st.getObject()).findFirst();
 
 					assertTrue(v.isPresent());
 					assertTrue(v.get().isLiteral());
-					assertEquals(i * (2 * i), ((Literal) v.get()).intValue());
+					int area = i * (2 * i);
+					areaSum += area;
+					assertEquals("Area of rectangle " + r + " must be correct.", area, ((Literal) v.get()).intValue());
 				}
+			}
+			try (RepositoryResult<Statement> result = connection.getStatements(rectangles, areaProperty, null)) {
+				Optional<Value> v = result.stream().map(st -> st.getObject()).findFirst();
+
+				assertTrue(v.isPresent());
+				assertTrue(v.get().isLiteral());
+				assertEquals(areaSum, ((Literal) v.get()).intValue());
 			}
 		}
 
@@ -131,23 +170,36 @@ public class InferencingTest {
 			// adds additional rectangles
 			for (int i = 5; i < 10; i++) {
 				Resource r = vf.createIRI(NS + "rect" + i);
-				connection.add(r, RDF.TYPE, targetClass);
+				connection.add(r, RDF.TYPE, rectangleClass);
 				connection.add(r, vf.createIRI(NS + "a"), vf.createLiteral(i));
 				connection.add(r, vf.createIRI(NS + "b"), vf.createLiteral(2 * i));
+
+				// add to list of all rectangles
+				connection.add(rectangles, rectangleProperty, r);
 			}
 			connection.commit();
 
 			// ensure that all rectangles have correct areas
+			areaSum = 0;
 			for (int i = 0; i < 10; i++) {
 				Resource r = vf.createIRI(NS + "rect" + i);
 
-				try (RepositoryResult<Statement> result = connection.getStatements(r, targetProperty, null)) {
+				try (RepositoryResult<Statement> result = connection.getStatements(r, areaProperty, null)) {
 					Optional<Value> v = result.stream().map(st -> st.getObject()).findFirst();
 
 					assertTrue(v.isPresent());
 					assertTrue(v.get().isLiteral());
-					assertEquals(i * (2 * i), ((Literal) v.get()).intValue());
+					int area = i * (2 * i);
+					areaSum += area;
+					assertEquals("Area of rectangle " + r + " must be correct.", area, ((Literal) v.get()).intValue());
 				}
+			}
+			try (RepositoryResult<Statement> result = connection.getStatements(rectangles, areaProperty, null)) {
+				Optional<Value> v = result.stream().map(st -> st.getObject()).findFirst();
+
+				assertTrue(v.isPresent());
+				assertTrue(v.get().isLiteral());
+				assertEquals(areaSum, ((Literal) v.get()).intValue());
 			}
 		}
 
@@ -162,16 +214,26 @@ public class InferencingTest {
 
 		try (RepositoryConnection connection = repository.getConnection()) {
 			// ensure that area of all rectangles has been doubled
+			areaSum = 0;
 			for (int i = 0; i < 10; i++) {
 				Resource r = vf.createIRI(NS + "rect" + i);
 
-				try (RepositoryResult<Statement> result = connection.getStatements(r, targetProperty, null)) {
+				try (RepositoryResult<Statement> result = connection.getStatements(r, areaProperty, null)) {
 					Optional<Value> v = result.stream().map(st -> st.getObject()).findFirst();
 
 					assertTrue(v.isPresent());
 					assertTrue(v.get().isLiteral());
-					assertEquals(2 * i * (2 * i), ((Literal) v.get()).intValue());
+					int area = 2 * i * (2 * i);
+					areaSum += area;
+					assertEquals("Area of rectangle " + r + " must be correct.", area, ((Literal) v.get()).intValue());
 				}
+			}
+			try (RepositoryResult<Statement> result = connection.getStatements(rectangles, areaProperty, null)) {
+				Optional<Value> v = result.stream().map(st -> st.getObject()).findFirst();
+
+				assertTrue(v.isPresent());
+				assertTrue(v.get().isLiteral());
+				assertEquals(areaSum, ((Literal) v.get()).intValue());
 			}
 		}
 

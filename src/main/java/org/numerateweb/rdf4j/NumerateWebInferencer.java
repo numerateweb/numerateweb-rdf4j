@@ -1,5 +1,7 @@
 package org.numerateweb.rdf4j;
 
+import com.google.common.cache.Cache;
+import com.google.common.cache.CacheBuilder;
 import com.google.inject.AbstractModule;
 import com.google.inject.Guice;
 import com.google.inject.Injector;
@@ -14,6 +16,7 @@ import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.ValueFactory;
+import org.eclipse.rdf4j.model.vocabulary.OWL;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.model.vocabulary.RDFS;
 import org.eclipse.rdf4j.query.BindingSet;
@@ -34,30 +37,29 @@ import org.numerateweb.math.rdf.NWMathModule;
 import org.numerateweb.math.rdf.rules.NWRULES;
 import org.numerateweb.math.reasoner.CacheManager;
 import org.numerateweb.math.util.SparqlUtils;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.util.*;
 import java.util.function.Supplier;
 
 public class NumerateWebInferencer extends NotifyingSailWrapper {
 
+	static private final Logger logger = LoggerFactory.getLogger(NumerateWebInferencer.class);
+
 	private static final String TARGETS_QUERY = Rdf4jModelAccess.PREFIX +
 			SparqlUtils.prefix("mathrl", NWRULES.NAMESPACE)
-			+ "SELECT ?instance ?property ?targetGraph WHERE { " //
-			+ "?c mathrl:constraint ?constraint . ?constraint mathrl:onProperty ?property ." //
-			// + "?targetGraph owl:imports* ?constraints ."
-			+ "?instance a [ rdfs:subClassOf* ?c ]" //
-			//+ "optional { ?instance a [ rdfs:subClassOf* ?c ] filter ! bound(?targetGraph) }"
+			+ "SELECT ?instance ?property ?targetGraph { " //
+			+ "{ select * { "
+			+ "  ?c mathrl:constraint ?constraint . ?constraint mathrl:onProperty ?property ." //
+			+ "  ?type rdfs:subClassOf* ?c" //
+			+ "} }"
+			+ "{ graph ?targetGraph { ?instance a ?type } } union { ?instance a ?type filter (!bound(?targetGraph)) }" //
 			+ "}";
 	protected static final ParsedQuery targetsQuery = QueryParserUtil.parseQuery(QueryLanguage.SPARQL, TARGETS_QUERY,
 			null);
-	private static final String INVALID_TARGETS_QUERY = Rdf4jModelAccess.PREFIX +
-			SparqlUtils.prefix("mathrl", NWRULES.NAMESPACE)
-			+ "SELECT distinct ?instance { " //
-			+ "{ select ?invalidated { ?invalidated <math:invalid> true } } ?invalidated <math:usedBy>* ?instance ."
-			+ "}";
-	protected static final ParsedQuery invalidTargetsQuery = QueryParserUtil.parseQuery(QueryLanguage.SPARQL, INVALID_TARGETS_QUERY,
-			null);
 	private static final IsolationLevels READ_COMMITTED = IsolationLevels.READ_COMMITTED;
+	private static final DatasetInfo EMPTY_DATASET = new DatasetInfo();
 	protected final CacheManager cacheManager = new CacheManager(GuavaCache::new);
 	protected Injector injector;
 	protected RDF4JValueConverter valueConverter;
@@ -71,7 +73,8 @@ public class NumerateWebInferencer extends NotifyingSailWrapper {
 	IRI CONSTRAINT_PROPERTY;
 	private Set<Resource> changedResources = new HashSet<>();
 	private Set<Resource> changedClasses = new HashSet<>();
-
+	private DatasetInfo activeDataset = EMPTY_DATASET;
+	private Cache<Resource, DatasetInfo> datasetCache = CacheBuilder.newBuilder().maximumSize(10000).build();
 	private boolean enableIncrementalInferencing = true;
 
 	public NumerateWebInferencer() {
@@ -98,9 +101,8 @@ public class NumerateWebInferencer extends NotifyingSailWrapper {
 		USED_BY = getValueFactory().createIRI("math:usedBy");
 		CONSTRAINT_PROPERTY = getValueFactory().createIRI(NWRULES.PROPERTY_CONSTRAINT.toString());
 		Supplier<SailConnection> connSupplier = () -> this.connection.get();
-		SimpleDataset dataset = new SimpleDataset();
-		Supplier<Resource[]> contextSupplier = () -> null;
-		Supplier<Dataset> datasetSupplier = () -> dataset;
+		Supplier<Resource[]> contextSupplier = () -> this.activeDataset.context;
+		Supplier<Dataset> datasetSupplier = () -> this.activeDataset.dataset;
 		modelAccess = new Rdf4jModelAccess(literalConverter,
 				getValueFactory(), connSupplier, contextSupplier, datasetSupplier, cacheManager);
 	}
@@ -146,46 +148,79 @@ public class NumerateWebInferencer extends NotifyingSailWrapper {
 			} else {
 				doIncrementalInferencing(connection);
 			}
+			changedClasses.clear();
+			changedResources.clear();
 		} finally {
 			inferencing = false;
 		}
 	}
 
 	public void doIncrementalInferencing(SailConnection connection) {
-		Set<Resource> toUpdate = new HashSet<>();
+		Set<Resource> seen = new HashSet<>();
+		Queue<Resource> toUpdate = new LinkedList<>();
+
+		logger.info("Updating {} resources", changedResources.size());
+
 		for (Resource instance : changedResources) {
-			toUpdate.add(instance);
-
-			Resource[] writeCtx = Rdf4jModelAccess.EMPTY_CTX;
-
 			Rdf4jEvaluator evaluator = evaluators.get(null);
-			Set<IReference> properties = modelAccess.getPropertiesWithConstraintsOfResource(instance);
+			ResourceInfo instanceInfo = modelAccess.getResourceInfo(instance);
+			Set<IReference> properties = modelAccess.getPropertiesWithConstraintsOfResource(instanceInfo);
 			for (IReference property : properties) {
 				if (evaluator != null) {
 					evaluator.invalidateCache(instance, property);
 				}
 				((InferencerConnection) connection).removeInferredStatement(instance,
-						(IRI) valueConverter.toRdf4j(property), null, writeCtx);
+						(IRI) valueConverter.toRdf4j(property), null);
 			}
 			if (!properties.isEmpty()) {
-				connection.getStatements(instance, USED_BY, null, true, writeCtx).stream().forEach(stmt -> {
-					toUpdate.add((Resource) stmt.getObject());
-					((InferencerConnection) connection).removeInferredStatement(instance, USED_BY,
-							stmt.getObject(), writeCtx);
+				if (seen.add(instance)) {
+					toUpdate.add(instance);
+				}
+				// remove all incoming usedBy edges
+				connection.getStatements(null, USED_BY, instance, true).stream().forEach(stmt -> {
+					Resource parameter = stmt.getSubject();
+					((InferencerConnection) connection).removeInferredStatement(parameter, USED_BY,
+							instance, stmt.getContext());
 				});
-			}
-		}
-
-		for (Resource instance : toUpdate) {
-			Rdf4jEvaluator evaluator = evaluators.computeIfAbsent(null, graph -> {
-				return new Rdf4jEvaluator(modelAccess, cacheManager);
-			});
-			for (IReference property : modelAccess.getPropertiesWithConstraintsOfResource(instance)) {
-				evaluator.evaluateRoot(instance, property, Optional.empty());
 			}
 		}
 		changedResources.clear();
 		changedClasses.clear();
+
+		while (!toUpdate.isEmpty()) {
+			Resource instance = toUpdate.remove();
+			ResourceInfo instanceInfo = modelAccess.getResourceInfo(instance);
+
+			for (Resource context : instanceInfo.contexts) {
+				activeDataset = getDataset(context, connection);
+				Rdf4jEvaluator evaluator = evaluators.computeIfAbsent(context, graph -> {
+					return new Rdf4jEvaluator(modelAccess, cacheManager);
+				});
+				for (IReference property : modelAccess.getPropertiesWithConstraintsOfResource(instanceInfo)) {
+					evaluator.evaluateRoot(instance, property, Optional.empty());
+				}
+
+				// recursively update dependents
+				connection.getStatements(instance, USED_BY, null, true).stream().forEach(stmt -> {
+					Resource usedBy = (Resource) stmt.getObject();
+					((InferencerConnection) connection).removeInferredStatement(instance, USED_BY, stmt.getObject(),
+							stmt.getContext());
+					if (seen.add(usedBy)) {
+						toUpdate.add(usedBy);
+
+						ResourceInfo usedByInfo = modelAccess.getResourceInfo(instance);
+						Set<IReference> properties = modelAccess.getPropertiesWithConstraintsOfResource(usedByInfo);
+						for (IReference property : properties) {
+							if (evaluator != null) {
+								evaluator.invalidateCache(usedBy, property);
+							}
+							((InferencerConnection) connection).removeInferredStatement(usedBy,
+									(IRI) valueConverter.toRdf4j(property), null);
+						}
+					}
+				});
+			}
+		}
 	}
 
 	public void doFullInferencing(SailConnection connection) {
@@ -194,6 +229,7 @@ public class NumerateWebInferencer extends NotifyingSailWrapper {
 
 		SimpleDataset dataset = new SimpleDataset();
 		BindingSet bindingSet = new ListBindingSet(List.of(), List.of());
+
 		try (CloseableIteration<? extends BindingSet, QueryEvaluationException> bindingsIter = connection
 				.evaluate(targetsQuery.getTupleExpr(), dataset, bindingSet, false)) {
 			while (bindingsIter.hasNext()) {
@@ -201,6 +237,8 @@ public class NumerateWebInferencer extends NotifyingSailWrapper {
 				Resource instance = (Resource) bindings.getValue("instance");
 				Resource property = (Resource) bindings.getValue("property");
 				Resource targetGraph = (Resource) bindings.getValue("targetGraph");
+
+				activeDataset = getDataset(targetGraph, connection);
 				Rdf4jEvaluator evaluator = evaluators.computeIfAbsent(targetGraph, graph -> {
 					return new Rdf4jEvaluator(modelAccess, cacheManager);
 				});
@@ -232,11 +270,49 @@ public class NumerateWebInferencer extends NotifyingSailWrapper {
 		return levels;
 	}
 
+	public boolean getEnableIncrementalInferencing() {
+		return enableIncrementalInferencing;
+	}
+
 	public void setEnableIncrementalInferencing(boolean enableIncrementalInferencing) {
 		this.enableIncrementalInferencing = enableIncrementalInferencing;
 	}
 
-	public boolean getEnableIncrementalInferencing() {
-		return enableIncrementalInferencing;
+	private DatasetInfo getDataset(Resource context, SailConnection connection) {
+		if (context == null) {
+			return EMPTY_DATASET;
+		}
+		DatasetInfo datasetInfo = datasetCache.getIfPresent(context);
+		if (datasetInfo == null) {
+			List<Resource> contexts = new ArrayList<>();
+
+			Set<Resource> seen = new HashSet<>();
+			Queue<Resource> queue = new LinkedList<>();
+			queue.add(context);
+			while (!queue.isEmpty()) {
+				Resource currentContext = queue.remove();
+				contexts.add(currentContext);
+				connection.getStatements(currentContext, OWL.IMPORTS, null, false, currentContext).stream()
+						.filter(stmt -> stmt.getObject() instanceof IRI)
+						.forEach(stmt -> {
+							Resource imported = (Resource) stmt.getObject();
+							if (seen.add(imported)) {
+								queue.add(imported);
+							}
+						});
+			}
+			datasetInfo.context = contexts.toArray(new Resource[contexts.size()]);
+			for (Resource ctx : contexts) {
+				datasetInfo.dataset.addDefaultGraph((IRI) ctx);
+				datasetInfo.dataset.addNamedGraph((IRI) ctx);
+			}
+			datasetCache.put(context, datasetInfo);
+		}
+		return datasetInfo;
+	}
+
+	private static class DatasetInfo {
+		Resource[] context = null;
+		SimpleDataset dataset = new SimpleDataset();
 	}
 }

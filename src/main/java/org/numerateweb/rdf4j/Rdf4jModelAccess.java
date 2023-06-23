@@ -122,7 +122,7 @@ class Rdf4jModelAccess implements IModelAccess {
 	private final Map<Resource, List<ConstraintInfo>> classToConstraints = new HashMap<>();
 	private final Map<IReference, IRI> propertyCache = new HashMap<>();
 	private Cache<Pair<Resource, Resource>, Boolean> dependencyCache = CacheBuilder.newBuilder().maximumSize(100000).build();
-	private ICache<Resource, List<Resource>> resourceTypes;
+	private ICache<Resource, ResourceInfo> resourceInfos;
 	private Cache<String, OMObject> expressionCache = CacheBuilder.newBuilder().maximumSize(10000).build();
 
 	static class ConstraintInfo {
@@ -146,7 +146,7 @@ class Rdf4jModelAccess implements IModelAccess {
 		this.context = context;
 		this.dataset = dataset;
 		this.valueConverter = new RDF4JValueConverter(valueFactory);
-		this.resourceTypes = cacheManager.get(new TypeLiteral<>() {
+		this.resourceInfos = cacheManager.get(new TypeLiteral<>() {
 		});
 		this.USED_BY = valueFactory.createIRI("math:usedBy");
 	}
@@ -186,18 +186,26 @@ class Rdf4jModelAccess implements IModelAccess {
 		return parser.parse(valueConverter.fromRdf4j(mathObj), new OMObjectBuilder());
 	}
 
-	protected List<Resource> getDirectClasses(Resource resource) {
-		CacheResult<List<Resource>> result = resourceTypes.get(resource);
+	protected ResourceInfo getResourceInfo(Resource resource) {
+		CacheResult<ResourceInfo> result = resourceInfos.get(resource);
 		if (result != null) {
 			return result.value;
 		}
-		List<Resource> types = ((SailConnectionWrapper) connection.get()).getWrappedConnection().
-				getStatements(resource, RDF.TYPE, null, false, readContext())
-				.stream().map(org.eclipse.rdf4j.model.Statement::getObject)
-				.filter(r -> r instanceof Resource).map(r -> (Resource) r)
-				.collect(Collectors.toList());
-		resourceTypes.put(resource, types);
-		return types;
+		ResourceInfo info = new ResourceInfo();
+		Set<Resource> seenContexts = new HashSet<>();
+		((SailConnectionWrapper) connection.get()).getWrappedConnection().
+				getStatements(resource, RDF.TYPE, null, false)
+				.stream()
+				.filter(stmt -> stmt.getObject() instanceof Resource)
+				.forEach(stmt -> {
+					info.types.add((Resource) stmt.getObject());
+					if (seenContexts.add(stmt.getContext())) {
+						info.contexts.add(stmt.getContext());
+					}
+				});
+		sort(info.types);
+		resourceInfos.put(resource, info);
+		return info;
 	}
 
 	protected List<Resource> getDirectSuperClasses(Resource clazz) {
@@ -217,7 +225,7 @@ class Rdf4jModelAccess implements IModelAccess {
 	public ResultSpec<OMObject> getExpressionSpec(Object subject, IReference property) {
 		Resource subjectResource = (Resource) subject;
 		Set<IRI> graphs = dataset.get().getDefaultGraphs();
-		for (Resource clazz : sort(getDirectClasses(subjectResource))) {
+		for (Resource clazz : getResourceInfo(subjectResource).types) {
 			Stream<ConstraintInfo> constraints = getConstraintsForClass(clazz).stream()
 					.filter(c -> property.equals(c.property) &&
 							// only consider accessible graphs
@@ -231,10 +239,10 @@ class Rdf4jModelAccess implements IModelAccess {
 		return ResultSpec.empty();
 	}
 
-	public Set<IReference> getPropertiesWithConstraintsOfResource(Resource resource) {
+	public Set<IReference> getPropertiesWithConstraintsOfResource(ResourceInfo resourceInfo) {
 		Set<IReference> properties = new HashSet<>();
 		Set<IRI> graphs = dataset.get().getDefaultGraphs();
-		for (Resource clazz : sort(getDirectClasses(resource))) {
+		for (Resource clazz : resourceInfo.types) {
 			Stream<ConstraintInfo> constraints = getConstraintsForClass(clazz).stream();
 			if (! graphs.isEmpty()) {
 				// only consider accessible graphs
@@ -423,6 +431,6 @@ class Rdf4jModelAccess implements IModelAccess {
 	}
 
 	public void invalidateType(Resource subject) {
-		resourceTypes.remove(subject);
+		resourceInfos.remove(subject);
 	}
 }

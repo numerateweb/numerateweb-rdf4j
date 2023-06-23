@@ -52,19 +52,17 @@ public class IncrementalInferencingBenchmark extends InferencingBenchmarkBase {
 		try {
 			for (int c = 0; c < classes; c++) {
 				for (int i = 0; i < instancesPerClass; i++) {
-					Resource r = vf.createIRI(ns + "instance-" + c + "-" + i);
-					for (int cNr = 0; cNr < constraintsPerClass; cNr++) {
-						for (int p = 0; p < uniquePropertiesPerConstraint; p++) {
-							if (rnd.nextInt(100) <= modifyValuesPercent) {
+					if (rnd.nextInt(100) <= modifyValuesPercent) {
+						Resource r = vf.createIRI(ns + "instance-" + c + "-" + i);
+						for (int cNr = 0; cNr < constraintsPerClass; cNr++) {
+							for (int p = 0; p < uniquePropertiesPerConstraint; p++) {
 								connection.remove(r, vf.createIRI(ns + "p" + cNr + "-" + p), null);
 								connection.add(r, vf.createIRI(ns + "p" + cNr + "-" + p),
 										vf.createLiteral(1 + rnd.nextInt(10)));
 							}
 						}
-					}
 
-					for (int p = 0; p < sharedPropertiesPerConstraint; p++) {
-						if (rnd.nextInt(100) <= modifyValuesPercent) {
+						for (int p = 0; p < sharedPropertiesPerConstraint; p++) {
 							connection.remove(r, vf.createIRI(ns + "p" + p), null);
 							connection.add(r, vf.createIRI(ns + "p" + p),
 									vf.createLiteral(1 + rnd.nextInt(10)));
