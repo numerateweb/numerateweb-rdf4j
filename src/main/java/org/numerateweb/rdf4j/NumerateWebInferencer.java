@@ -5,6 +5,8 @@ import com.google.common.cache.CacheBuilder;
 import com.google.inject.AbstractModule;
 import com.google.inject.Guice;
 import com.google.inject.Injector;
+import com.google.inject.TypeLiteral;
+import net.enilink.commons.util.Pair;
 import net.enilink.komma.core.IReference;
 import net.enilink.komma.core.KommaModule;
 import net.enilink.komma.literals.LiteralConverter;
@@ -36,6 +38,7 @@ import org.eclipse.rdf4j.sail.inferencer.InferencerConnection;
 import org.numerateweb.math.rdf.NWMathModule;
 import org.numerateweb.math.rdf.rules.NWRULES;
 import org.numerateweb.math.reasoner.CacheManager;
+import org.numerateweb.math.reasoner.ICache;
 import org.numerateweb.math.util.SparqlUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -77,6 +80,8 @@ public class NumerateWebInferencer extends NotifyingSailWrapper {
 	private Cache<Resource, DatasetInfo> datasetCache = CacheBuilder.newBuilder().maximumSize(10000).build();
 	private boolean enableIncrementalInferencing = true;
 
+	private Cache<Object, CachedEntity> propertyCache;
+
 	public NumerateWebInferencer() {
 		super();
 	}
@@ -105,6 +110,7 @@ public class NumerateWebInferencer extends NotifyingSailWrapper {
 		Supplier<Dataset> datasetSupplier = () -> this.activeDataset.dataset;
 		modelAccess = new Rdf4jModelAccess(literalConverter,
 				getValueFactory(), connSupplier, contextSupplier, datasetSupplier, cacheManager);
+		propertyCache = CacheBuilder.newBuilder().maximumSize(100000).build();
 	}
 
 	@Override
@@ -124,14 +130,6 @@ public class NumerateWebInferencer extends NotifyingSailWrapper {
 		// handle changes of resource types
 		if (RDF.TYPE.equals(stmt.getPredicate())) {
 			modelAccess.invalidateType(stmt.getSubject());
-		}
-
-		// this is required to correctly invalidate any cached values
-		if (!evaluators.isEmpty()) {
-			Rdf4jEvaluator evaluator = evaluators.get(stmt.getContext());
-			if (evaluator != null) {
-				evaluator.invalidateCache(stmt.getSubject(), valueConverter.fromRdf4j(stmt.getPredicate()));
-			}
 		}
 	}
 
@@ -162,13 +160,12 @@ public class NumerateWebInferencer extends NotifyingSailWrapper {
 		logger.info("Updating {} resources", changedResources.size());
 
 		for (Resource instance : changedResources) {
-			Rdf4jEvaluator evaluator = evaluators.get(null);
+			// could be optimized by just removing the changed properties
+			propertyCache.invalidate(instance);
+
 			ResourceInfo instanceInfo = modelAccess.getResourceInfo(instance);
 			Set<IReference> properties = modelAccess.getPropertiesWithConstraintsOfResource(instanceInfo);
 			for (IReference property : properties) {
-				if (evaluator != null) {
-					evaluator.invalidateCache(instance, property);
-				}
 				((InferencerConnection) connection).removeInferredStatement(instance,
 						(IRI) valueConverter.toRdf4j(property), null);
 			}
@@ -194,7 +191,7 @@ public class NumerateWebInferencer extends NotifyingSailWrapper {
 			for (Resource context : instanceInfo.contexts) {
 				activeDataset = getDataset(context, connection);
 				Rdf4jEvaluator evaluator = evaluators.computeIfAbsent(context, graph -> {
-					return new Rdf4jEvaluator(modelAccess, cacheManager);
+					return new Rdf4jEvaluator(modelAccess, propertyCache, cacheManager);
 				});
 				for (IReference property : modelAccess.getPropertiesWithConstraintsOfResource(instanceInfo)) {
 					evaluator.evaluateRoot(instance, property, Optional.empty());
@@ -211,9 +208,6 @@ public class NumerateWebInferencer extends NotifyingSailWrapper {
 						ResourceInfo usedByInfo = modelAccess.getResourceInfo(instance);
 						Set<IReference> properties = modelAccess.getPropertiesWithConstraintsOfResource(usedByInfo);
 						for (IReference property : properties) {
-							if (evaluator != null) {
-								evaluator.invalidateCache(usedBy, property);
-							}
 							((InferencerConnection) connection).removeInferredStatement(usedBy,
 									(IRI) valueConverter.toRdf4j(property), null);
 						}
@@ -224,6 +218,9 @@ public class NumerateWebInferencer extends NotifyingSailWrapper {
 	}
 
 	public void doFullInferencing(SailConnection connection) {
+		// clear cache completely
+		propertyCache.invalidateAll();
+
 		// remove all usedBy statements
 		((InferencerConnection) connection).removeInferredStatement(null, USED_BY, null);
 
@@ -240,7 +237,7 @@ public class NumerateWebInferencer extends NotifyingSailWrapper {
 
 				activeDataset = getDataset(targetGraph, connection);
 				Rdf4jEvaluator evaluator = evaluators.computeIfAbsent(targetGraph, graph -> {
-					return new Rdf4jEvaluator(modelAccess, cacheManager);
+					return new Rdf4jEvaluator(modelAccess, propertyCache, cacheManager);
 				});
 				evaluator.evaluateRoot(instance, valueConverter.fromRdf4j(property), Optional.empty());
 			}

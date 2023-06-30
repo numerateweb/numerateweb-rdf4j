@@ -1,24 +1,92 @@
 package org.numerateweb.rdf4j;
 
+import com.google.common.cache.Cache;
 import net.enilink.commons.iterator.IExtendedIterator;
 import net.enilink.commons.util.Pair;
 import net.enilink.komma.core.IReference;
 import net.enilink.komma.core.URI;
+import org.eclipse.rdf4j.model.Resource;
 import org.numerateweb.math.eval.SimpleEvaluator;
 import org.numerateweb.math.model.OMObject;
+import org.numerateweb.math.reasoner.AbstractCache;
 import org.numerateweb.math.reasoner.CacheManager;
+import org.numerateweb.math.reasoner.CacheResult;
+import org.numerateweb.math.reasoner.ICache;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.util.*;
+import java.util.concurrent.ExecutionException;
 
 class Rdf4jEvaluator extends SimpleEvaluator {
 
 	protected final static Logger logger = LoggerFactory.getLogger(Rdf4jEvaluator.class);
 	protected Map<Pair<Object, IReference>, List<Object>> propertiesToManagedInstances = new HashMap<>();
+	protected final Cache<Object, CachedEntity> cache;
 
-	public Rdf4jEvaluator(Rdf4jModelAccess modelAccess, CacheManager cacheManager) {
+	public Rdf4jEvaluator(Rdf4jModelAccess modelAccess, Cache<Object, CachedEntity> cache, CacheManager cacheManager) {
 		super(modelAccess, cacheManager);
+		this.cache = cache;
+	}
+
+	@Override
+	protected ICache<Pair<Object, IReference>, Object> createValueCache(CacheManager cacheManager) {
+		return new AbstractCache<>() {
+			@Override
+			protected CacheResult<Object> getInternal(Pair<Object, IReference> key) {
+				CachedEntity entity = cache.getIfPresent(key.getFirst());
+				if (entity != null) {
+					Resource[] readContexts = ((Rdf4jModelAccess) modelAccess).readContext();
+					if (readContexts.length > 0) {
+						for (Resource ctx : readContexts) {
+							Object value = entity.get(ctx, key.getSecond());
+							if (value != null) {
+								return new CacheResult<>(value);
+							}
+						}
+					} else {
+						Object value = entity.get(null, key.getSecond());
+						if (value != null) {
+							return new CacheResult<>(value);
+						}
+					}
+				}
+				return null;
+			}
+
+			@Override
+			public void put(Pair<Object, IReference> key, Object o) {
+				try {
+					CachedEntity entity = cache.get(key.getFirst(), CachedEntity::new);
+					Resource[] writeCtx = ((Rdf4jModelAccess) modelAccess).writeContext((Resource) key.getFirst());
+					if (writeCtx.length > 0) {
+						entity.put(writeCtx[0], key.getSecond(), o);
+					} else {
+						entity.put(null, key.getSecond(), o);
+					}
+				} catch (ExecutionException e) {
+					throw new RuntimeException(e);
+				}
+			}
+
+			@Override
+			public Object remove(Pair<Object, IReference> key) {
+				CachedEntity entity = cache.getIfPresent(key.getFirst());
+				if (entity != null) {
+					Resource[] writeCtx = ((Rdf4jModelAccess) modelAccess).writeContext((Resource) key.getFirst());
+					if (writeCtx.length > 0) {
+						return entity.remove(writeCtx[0], key.getSecond());
+					} else {
+						return entity.remove(null, key.getSecond());
+					}
+				}
+				return null;
+			}
+
+			@Override
+			public void clear() {
+			}
+		};
 	}
 
 	@Override
@@ -103,13 +171,5 @@ class Rdf4jEvaluator extends SimpleEvaluator {
 				return it.toList();
 			}
 		}
-	}
-
-	void invalidateCache(Object subject, IReference property) {
-		valueCache.remove(new Pair<>(subject, property));
-	}
-
-	void clearCache() {
-		valueCache.clear();
 	}
 }

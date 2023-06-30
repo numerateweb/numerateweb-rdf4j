@@ -393,7 +393,7 @@ class Rdf4jModelAccess implements IModelAccess {
 				rdfValue = valueConverter.toRdf4j(literalConverter.createLiteral(value, null));
 			}
 			((InferencerConnection) connection.get()).addInferredStatement((Resource) subject,
-					(IRI) valueConverter.toRdf4j(property), rdfValue, writeContext());
+					(IRI) valueConverter.toRdf4j(property), rdfValue, writeContext((Resource) subject));
 		}
 		//System.out.println(String.format("%s: %s = %s", subject, property, results));
 	}
@@ -403,22 +403,25 @@ class Rdf4jModelAccess implements IModelAccess {
 		return graphs != null ? graphs : EMPTY_CTX;
 	}
 
-	Resource[] writeContext() {
+	Resource[] writeContext(Resource resource) {
 		Resource[] graphs = context.get();
-		Resource[] writeCtx;
 		if (graphs != null && graphs.length > 0) {
-			writeCtx = new Resource[]{graphs[0]};
-		} else {
-			writeCtx = EMPTY_CTX;
+			for (Resource resourceCtx : getResourceInfo(resource).contexts) {
+				for (Resource readableCtx : graphs) {
+					if (resourceCtx == readableCtx || resourceCtx.equals(readableCtx)) {
+						return new Resource[]{resourceCtx};
+					}
+				}
+			}
 		}
-		return writeCtx;
+		return EMPTY_CTX;
 	}
 
 	void addDependency(Pair<Object, IReference> from, Pair<Object, IReference> to) {
 		try {
 			dependencyCache.get(new Pair<>((Resource) from.getFirst(), (Resource) to.getFirst()), () -> {
 				((InferencerConnection) connection.get()).addInferredStatement((Resource) to.getFirst(),
-						USED_BY, (Resource) from.getFirst(), writeContext());
+						USED_BY, (Resource) from.getFirst(), writeContext((Resource) to.getFirst()));
 				return true;
 			});
 		} catch (ExecutionException e) {
