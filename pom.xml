@@ -19,7 +19,7 @@
 		<dependency>
 		    <groupId>com.github.numerateweb.numerateweb</groupId>
 		    <artifactId>org.numerateweb.math</artifactId>
-		    <version>455f2f21f2</version>
+		    <version>c15b06261f</version>
 			<exclusions>
 				<exclusion>
 					<groupId>net.enilink.bundles</groupId>

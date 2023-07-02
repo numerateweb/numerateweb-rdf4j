@@ -70,17 +70,16 @@ class Rdf4jEvaluator extends SimpleEvaluator {
 			}
 
 			@Override
-			public Object remove(Pair<Object, IReference> key) {
+			public void remove(Pair<Object, IReference> key) {
 				CachedEntity entity = cache.getIfPresent(key.getFirst());
 				if (entity != null) {
 					Resource[] writeCtx = ((Rdf4jModelAccess) modelAccess).writeContext((Resource) key.getFirst());
 					if (writeCtx.length > 0) {
-						return entity.remove(writeCtx[0], key.getSecond());
+						entity.remove(writeCtx[0], key.getSecond());
 					} else {
-						return entity.remove(null, key.getSecond());
+						entity.remove(null, key.getSecond());
 					}
 				}
-				return null;
 			}
 
 			@Override

@@ -2,34 +2,14 @@ package org.numerateweb.rdf4j;
 
 import java.util.HashMap;
 import java.util.Map;
-import java.util.Set;
-import java.util.concurrent.Callable;
-
-import com.google.common.collect.ImmutableSet;
 
 /**
  * A wrapper for caching a specific RDF resource (entity) with its properties in
  * different contexts (named graphs or models).
  */
 class CachedEntity {
-	/**
-	 * A factory that can be used with Guava's cache implementation.
-	 */
-	public static final Callable<CachedEntity> FACTORY = () -> new CachedEntity();
-
-	Map<Object, Map<Object, Object>> contextToProperties;
-
-	Map<Object, Object> ensureProperties(Object context) {
-		if (contextToProperties == null) {
-			contextToProperties = new HashMap<>();
-		}
-		Map<Object, Object> properties = contextToProperties.get(context);
-		if (properties == null) {
-			properties = new HashMap<>();
-			contextToProperties.put(context, properties);
-		}
-		return properties;
-	}
+	static final Object NULL = new Object();
+	Map<Object, Data> values = new HashMap<>();
 
 	/**
 	 * Associates the specified value with the specified property for an entity
@@ -42,11 +22,19 @@ class CachedEntity {
 	 *            property with which the specified value is to be associated.
 	 * @param value
 	 *            value to be associated with the specified property.
-	 * @return previous value associated with specified property, or
-	 *         <code>null</code> if there was no mapping for property.
 	 */
-	public synchronized Object put(Object context, Object property, Object value) {
-		return ensureProperties(context).put(property, value);
+	public synchronized void put(Object context, Object property, Object value) {
+		if (context == null) {
+			context = NULL;
+		}
+		Data data = values.get(property);
+		Data newData = new Data(context, value);
+		if (data != null) {
+			data = data.removeFirst(context).append(newData);
+		} else {
+			data = newData;
+		}
+		values.put(property, data);
 	}
 
 	/**
@@ -58,27 +46,19 @@ class CachedEntity {
 	 *            context to the entity to be accessed.
 	 * @param property
 	 *            property whose mapping is to be removed from the entity
-	 * @return previous value associated with specified entity's property
 	 */
-	public synchronized Object remove(Object context, Object property) {
-		Map<Object, Object> properties = contextToProperties == null ? null : contextToProperties.get(context);
-		if (properties == null) {
-			return null;
+	public synchronized void remove(Object context, Object property) {
+		Data data = values.get(property);
+		if (data != null) {
+			values.put(property, data.removeFirst(context == null ? NULL : context));
 		}
-		return properties.remove(property);
 	}
 
 	/**
 	 * Removes all property data of the entity.
-	 *
-	 * @return true if the data was removed, false if the data was not found
 	 */
-	public synchronized boolean clearProperties() {
-		if (contextToProperties != null) {
-			contextToProperties.clear();
-			return true;
-		}
-		return false;
+	public synchronized void clearProperties() {
+		values.clear();
 	}
 
 	/**
@@ -92,10 +72,10 @@ class CachedEntity {
 	 *         context.
 	 */
 	public synchronized Object get(Object context, Object property) {
-		Map<Object, Object> properties = contextToProperties == null ? null : contextToProperties.get(context);
-		if (properties == null) {
-			return null;
+		Data data = values.get(property);
+		if (data != null) {
+			return data.first(context == null ? NULL : context).getValue();
 		}
-		return properties.get(property);
+		return null;
 	}
 }

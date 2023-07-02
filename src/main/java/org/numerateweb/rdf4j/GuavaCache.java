@@ -37,10 +37,8 @@ class GuavaCache<K, T> extends AbstractCache<K, T> {
 	}
 
 	@Override
-	public T remove(K key) {
-		Object value = getInternal(key);
+	public void remove(K key) {
 		cache.invalidate(key);
-		return getRealValue(value == NULL);
 	}
 
 	@Override
