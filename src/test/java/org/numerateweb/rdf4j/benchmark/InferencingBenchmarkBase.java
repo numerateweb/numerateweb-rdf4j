@@ -158,6 +158,8 @@ public abstract class InferencingBenchmarkBase {
 
 		/*LmdbStoreConfig config = new LmdbStoreConfig();
 		config.setForceSync(false);
+		config.setTripleDBSize(100_000_000);
+		config.setValueDBSize(100_000_000);
 		NotifyingSail store = new LmdbStore(file, config);*/
 		MemoryStore store = new MemoryStore();
 		NumerateWebInferencer sail = createInferencer(store);

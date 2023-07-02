@@ -112,7 +112,7 @@ class Rdf4jModelAccess implements IModelAccess {
 			null);
 	protected final ValueFactory valueFactory;
 	private final IRI USED_BY;
-	private final ParsedQuery namespacesQuery = QueryParserUtil.parseQuery(QueryLanguage.SPARQL, PREFIX +
+	private static final ParsedQuery namespacesQuery = QueryParserUtil.parseQuery(QueryLanguage.SPARQL, PREFIX +
 			"SELECT DISTINCT ?prefix ?namespace WHERE { ?resource sh:prefixes/owl:imports*/sh:declare [ sh:prefix ?prefix ; sh:namespace ?namespace ] }", null);
 	private final Supplier<SailConnection> connection;
 	private final Supplier<Resource[]> context;
@@ -392,8 +392,9 @@ class Rdf4jModelAccess implements IModelAccess {
 			} else {
 				rdfValue = valueConverter.toRdf4j(literalConverter.createLiteral(value, null));
 			}
+			IRI propertyIri = propertyCache.computeIfAbsent(property, p -> (IRI) valueConverter.toRdf4j(p));
 			((InferencerConnection) connection.get()).addInferredStatement((Resource) subject,
-					(IRI) valueConverter.toRdf4j(property), rdfValue, writeContext((Resource) subject));
+					propertyIri, rdfValue, writeContext((Resource) subject));
 		}
 		//System.out.println(String.format("%s: %s = %s", subject, property, results));
 	}

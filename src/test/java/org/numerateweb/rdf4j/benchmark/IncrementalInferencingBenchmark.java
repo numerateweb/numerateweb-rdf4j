@@ -11,6 +11,7 @@
 
 package org.numerateweb.rdf4j.benchmark;
 
+import org.eclipse.rdf4j.common.transaction.IsolationLevels;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.sail.NotifyingSail;
@@ -48,7 +49,7 @@ public class IncrementalInferencingBenchmark extends InferencingBenchmarkBase {
 		String ns = "http://example.org/";
 		Random rnd = new Random(1337);
 
-		connection.begin();
+		connection.begin(IsolationLevels.NONE);
 		try {
 			for (int c = 0; c < classes; c++) {
 				for (int i = 0; i < instancesPerClass; i++) {
