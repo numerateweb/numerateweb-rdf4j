@@ -74,8 +74,6 @@ public class NumerateWebInferencer extends NotifyingSailWrapper {
 	volatile boolean inferencing = false;
 	IRI USED_BY;
 	IRI CONSTRAINT_PROPERTY;
-	private Set<Resource> changedResources = new HashSet<>();
-	private Set<Resource> changedClasses = new HashSet<>();
 	private DatasetInfo activeDataset = EMPTY_DATASET;
 	private Cache<Resource, DatasetInfo> datasetCache = CacheBuilder.newBuilder().maximumSize(10000).build();
 	private boolean enableIncrementalInferencing = true;
@@ -118,22 +116,8 @@ public class NumerateWebInferencer extends NotifyingSailWrapper {
 		return new NumerateWebInferencerConnection(this, (InferencerConnection) super.getConnection());
 	}
 
-	void update(SailConnection connection, Statement stmt, boolean added) {
-		if (inferencing) {
-			return;
-		}
-		changedResources.add(stmt.getSubject());
-		if (CONSTRAINT_PROPERTY.equals(stmt.getPredicate()) || RDFS.SUBCLASSOF.equals(stmt.getPredicate())) {
-			changedClasses.add(stmt.getSubject());
-		}
-
-		// handle changes of resource types
-		if (RDF.TYPE.equals(stmt.getPredicate())) {
-			modelAccess.invalidateType(stmt.getSubject());
-		}
-	}
-
-	public void reevaluate(SailConnection connection) {
+	public synchronized void reevaluate(SailConnection connection, Set<Resource> changedResources,
+	                                    Set<Resource> changedClasses) {
 		try {
 			inferencing = true;
 
@@ -144,16 +128,15 @@ public class NumerateWebInferencer extends NotifyingSailWrapper {
 				doFullInferencing(connection);
 				initialInferencingDone = true;
 			} else {
-				doIncrementalInferencing(connection);
+				doIncrementalInferencing(connection, changedResources, changedClasses);
 			}
-			changedClasses.clear();
-			changedResources.clear();
 		} finally {
 			inferencing = false;
 		}
 	}
 
-	public void doIncrementalInferencing(SailConnection connection) {
+	public void doIncrementalInferencing(SailConnection connection, Set<Resource> changedResources,
+	                                     Set<Resource> changedClasses) {
 		Set<Resource> seen = new HashSet<>();
 		Queue<Resource> toUpdate = new LinkedList<>();
 
