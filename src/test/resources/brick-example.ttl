@@ -1,0 +1,46 @@
+@prefix : <http://example.org/brick/> .
+@prefix rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
+@prefix brick: <https://brickschema.org/schema/Brick#> .
+@prefix mathrl: <http://numerateweb.org/vocab/math/rules#> .
+@prefix sh: <http://www.w3.org/ns/shacl#> .
+
+: sh:declare [
+  sh:prefix "brick" ; sh:namespace "https://brickschema.org/schema/Brick#"^^xsd:anyURI ;
+] .
+
+:grossAreaConstraint a mathrl:Constraint ; sh:prefixes : ;
+  mathrl:onProperty brick:grossArea ;
+  mathrl:expressionString "sum(@@brick:hasPart, $p -> @brick:grossArea($p))" .
+
+brick:Building mathrl:constraint :grossAreaConstraint .
+brick:Floor mathrl:constraint :grossAreaConstraint .
+
+# Building
+:building rdf:type brick:Building ;
+  brick:hasPart :floor1, :floor2, :floor3 .
+
+# Floors
+:floor1 rdf:type brick:Floor ;
+  brick:hasPart :room1, :room2 .
+
+:floor2 rdf:type brick:Floor ;
+  brick:hasPart :room3, :room4 .
+
+:floor3 rdf:type brick:Floor ;
+  brick:hasPart :room5 .
+
+# Rooms
+:room1 rdf:type brick:Room ;
+  brick:grossArea 100 .
+
+:room2 rdf:type brick:Room ;
+  brick:grossArea 200 .
+
+:room3 rdf:type brick:Room ;
+  brick:grossArea 300 .
+
+:room4 rdf:type brick:Room ;
+  brick:grossArea 400 .
+
+:room5 rdf:type brick:Room ;
+  brick:grossArea 500 .

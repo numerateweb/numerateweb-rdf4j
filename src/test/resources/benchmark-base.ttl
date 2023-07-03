@@ -1,5 +1,4 @@
 @prefix :       <http://example.org/> .
-@prefix math:   <http://numerateweb.org/vocab/math#> .
 @prefix mathrl: <http://numerateweb.org/vocab/math/rules#> .
 @prefix sh:     <http://www.w3.org/ns/shacl#> .
 @prefix owl:    <http://www.w3.org/2002/07/owl#> .
