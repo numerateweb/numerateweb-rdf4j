@@ -356,10 +356,9 @@ class Rdf4jModelAccess implements IModelAccess {
 	public IExtendedIterator<?> getPropertyValues(Object subject, IReference property,
 	                                              Optional<IReference> restriction) {
 		SailConnection baseConn = ((SailConnectionWrapper) connection.get()).getWrappedConnection();
-		IRI propertyIri = propertyCache.computeIfAbsent(property, p -> (IRI) valueConverter.toRdf4j(p));
 		var readCtx = readContext();
 		Stream<? extends org.eclipse.rdf4j.model.Statement> stmts = baseConn.getStatements((Resource) subject,
-				propertyIri, null, false, readCtx).stream();
+				mapProperty(property), null, false, readCtx).stream();
 		if (restriction.isPresent()) {
 			Resource restrictionResource = valueConverter.toRdf4j(restriction.get());
 			stmts = stmts.filter(stmt -> stmt.getObject().isLiteral() ? true :
@@ -392,11 +391,14 @@ class Rdf4jModelAccess implements IModelAccess {
 			} else {
 				rdfValue = valueConverter.toRdf4j(literalConverter.createLiteral(value, null));
 			}
-			IRI propertyIri = propertyCache.computeIfAbsent(property, p -> (IRI) valueConverter.toRdf4j(p));
 			((InferencerConnection) connection.get()).addInferredStatement((Resource) subject,
-					propertyIri, rdfValue, writeContext((Resource) subject));
+					mapProperty(property), rdfValue, writeContext((Resource) subject));
 		}
-		//System.out.println(String.format("%s: %s = %s", subject, property, results));
+		// System.out.println(String.format("%s: %s = %s", subject, property, results));
+	}
+
+	IRI mapProperty(IReference property) {
+		return propertyCache.computeIfAbsent(property, p -> (IRI) valueConverter.toRdf4j(p));
 	}
 
 	Resource[] readContext() {

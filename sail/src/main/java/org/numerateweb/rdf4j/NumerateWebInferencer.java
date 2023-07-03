@@ -150,7 +150,7 @@ public class NumerateWebInferencer extends NotifyingSailWrapper {
 			Set<IReference> properties = modelAccess.getPropertiesWithConstraintsOfResource(instanceInfo);
 			for (IReference property : properties) {
 				((InferencerConnection) connection).removeInferredStatement(instance,
-						(IRI) valueConverter.toRdf4j(property), null);
+						modelAccess.mapProperty(property), null);
 			}
 			if (!properties.isEmpty()) {
 				if (seen.add(instance)) {
@@ -187,12 +187,15 @@ public class NumerateWebInferencer extends NotifyingSailWrapper {
 							stmt.getContext());
 					if (seen.add(usedBy)) {
 						toUpdate.add(usedBy);
+						propertyCache.invalidate(usedBy);
 
 						ResourceInfo usedByInfo = modelAccess.getResourceInfo(instance);
 						Set<IReference> properties = modelAccess.getPropertiesWithConstraintsOfResource(usedByInfo);
-						for (IReference property : properties) {
-							((InferencerConnection) connection).removeInferredStatement(usedBy,
-									(IRI) valueConverter.toRdf4j(property), null);
+						for (Resource usedByCtx : instanceInfo.contexts) {
+							for (IReference property : properties) {
+								((InferencerConnection) connection).removeInferredStatement(usedBy,
+										modelAccess.mapProperty(property), null, usedByCtx);
+							}
 						}
 					}
 				});
