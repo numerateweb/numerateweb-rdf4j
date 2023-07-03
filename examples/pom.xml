@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/maven-v4_0_0.xsd">
+	<modelVersion>4.0.0</modelVersion>
+	<parent>
+		<groupId>com.github.numerateweb.numerateweb-rdf4j</groupId>
+		<artifactId>numerateweb-rdf4j-parent</artifactId>
+		<version>1.0.0</version>
+	</parent>
+	<artifactId>numerateweb-rdf4j-example</artifactId>
+	<name>Numerate Web: RDF4J Examples</name>
+	<description>Examples for Numerate Web RDF4J integration.</description>
+
+	<dependencies>
+		<dependency>
+			<groupId>com.github.numerateweb.numerateweb-rdf4j</groupId>
+			<artifactId>numerateweb-rdf4j-sail</artifactId>
+			<version>${project.version}</version>
+		</dependency>
+	</dependencies>
+</project>
