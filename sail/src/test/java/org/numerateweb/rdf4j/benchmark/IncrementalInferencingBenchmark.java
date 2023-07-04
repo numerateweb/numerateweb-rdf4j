@@ -15,7 +15,7 @@ import org.eclipse.rdf4j.common.transaction.IsolationLevels;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.sail.NotifyingSail;
-import org.numerateweb.rdf4j.NumerateWebInferencer;
+import org.numerateweb.rdf4j.NumerateWebSail;
 import org.openjdk.jmh.annotations.Benchmark;
 import org.openjdk.jmh.annotations.Param;
 import org.openjdk.jmh.infra.BenchmarkParams;
@@ -87,9 +87,9 @@ public class IncrementalInferencingBenchmark extends InferencingBenchmarkBase {
 	}
 
 	@Override
-	protected NumerateWebInferencer createInferencer(NotifyingSail store) {
-		NumerateWebInferencer inferencer = new NumerateWebInferencer(store);
-		inferencer.setEnableIncrementalInferencing(true);
+	protected NumerateWebSail createInferencer(NotifyingSail store) {
+		NumerateWebSail inferencer = new NumerateWebSail(store);
+		inferencer.setIncrementalInference(true);
 		return inferencer;
 	}
 }

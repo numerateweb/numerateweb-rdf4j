@@ -5,8 +5,6 @@ import com.google.common.cache.CacheBuilder;
 import com.google.inject.AbstractModule;
 import com.google.inject.Guice;
 import com.google.inject.Injector;
-import com.google.inject.TypeLiteral;
-import net.enilink.commons.util.Pair;
 import net.enilink.komma.core.IReference;
 import net.enilink.komma.core.KommaModule;
 import net.enilink.komma.literals.LiteralConverter;
@@ -16,11 +14,8 @@ import org.eclipse.rdf4j.common.transaction.IsolationLevel;
 import org.eclipse.rdf4j.common.transaction.IsolationLevels;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Resource;
-import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.vocabulary.OWL;
-import org.eclipse.rdf4j.model.vocabulary.RDF;
-import org.eclipse.rdf4j.model.vocabulary.RDFS;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.Dataset;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
@@ -38,7 +33,6 @@ import org.eclipse.rdf4j.sail.inferencer.InferencerConnection;
 import org.numerateweb.math.rdf.NWMathModule;
 import org.numerateweb.math.rdf.rules.NWRULES;
 import org.numerateweb.math.reasoner.CacheManager;
-import org.numerateweb.math.reasoner.ICache;
 import org.numerateweb.math.util.SparqlUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -46,9 +40,9 @@ import org.slf4j.LoggerFactory;
 import java.util.*;
 import java.util.function.Supplier;
 
-public class NumerateWebInferencer extends NotifyingSailWrapper {
+public class NumerateWebSail extends NotifyingSailWrapper {
 
-	static private final Logger logger = LoggerFactory.getLogger(NumerateWebInferencer.class);
+	static private final Logger logger = LoggerFactory.getLogger(NumerateWebSail.class);
 
 	private static final String TARGETS_QUERY = Rdf4jModelAccess.PREFIX +
 			SparqlUtils.prefix("mathrl", NWRULES.NAMESPACE)
@@ -76,15 +70,15 @@ public class NumerateWebInferencer extends NotifyingSailWrapper {
 	IRI CONSTRAINT_PROPERTY;
 	private DatasetInfo activeDataset = EMPTY_DATASET;
 	private Cache<Resource, DatasetInfo> datasetCache = CacheBuilder.newBuilder().maximumSize(10000).build();
-	private boolean enableIncrementalInferencing = true;
+	private boolean incrementalInference = true;
 
 	private Cache<Object, CachedEntity> propertyCache;
 
-	public NumerateWebInferencer() {
+	public NumerateWebSail() {
 		super();
 	}
 
-	public NumerateWebInferencer(NotifyingSail baseSail) {
+	public NumerateWebSail(NotifyingSail baseSail) {
 		super(baseSail);
 	}
 
@@ -113,7 +107,7 @@ public class NumerateWebInferencer extends NotifyingSailWrapper {
 
 	@Override
 	public NotifyingSailConnection getConnection() throws SailException {
-		return new NumerateWebInferencerConnection(this, (InferencerConnection) super.getConnection());
+		return new NumerateWebSailConnection(this, (InferencerConnection) super.getConnection());
 	}
 
 	public synchronized void reevaluate(SailConnection connection, Set<Resource> changedResources,
@@ -124,7 +118,7 @@ public class NumerateWebInferencer extends NotifyingSailWrapper {
 			modelAccess.clearDependencyCache();
 
 			this.connection.set(connection);
-			if (!initialInferencingDone || !enableIncrementalInferencing) {
+			if (!initialInferencingDone || !incrementalInference) {
 				doFullInferencing(connection);
 				initialInferencingDone = true;
 			} else {
@@ -253,12 +247,12 @@ public class NumerateWebInferencer extends NotifyingSailWrapper {
 		return levels;
 	}
 
-	public boolean getEnableIncrementalInferencing() {
-		return enableIncrementalInferencing;
+	public boolean getIncrementalInference() {
+		return incrementalInference;
 	}
 
-	public void setEnableIncrementalInferencing(boolean enableIncrementalInferencing) {
-		this.enableIncrementalInferencing = enableIncrementalInferencing;
+	public void setIncrementalInference(boolean incrementalInference) {
+		this.incrementalInference = incrementalInference;
 	}
 
 	private DatasetInfo getDataset(Resource context, SailConnection connection) {

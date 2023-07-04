@@ -19,8 +19,8 @@ import static org.junit.Assert.assertTrue;
 public class InferencingTest {
 	static final String NS = "http://example.org/";
 
-	protected NumerateWebInferencer createSail() {
-		return new NumerateWebInferencer(new MemoryStore());
+	protected NumerateWebSail createSail() {
+		return new NumerateWebSail(new MemoryStore());
 	}
 
 	void createPrefixes(RepositoryConnection connection) {
@@ -51,7 +51,7 @@ public class InferencingTest {
 
 	@Test
 	public void basicTest() {
-		NumerateWebInferencer sail = createSail();
+		NumerateWebSail sail = createSail();
 		Repository repository = new SailRepository(sail);
 		ValueFactory vf = repository.getValueFactory();
 
@@ -109,7 +109,7 @@ public class InferencingTest {
 
 	@Test
 	public void incrementalTest() {
-		NumerateWebInferencer sail = createSail();
+		NumerateWebSail sail = createSail();
 		Repository repository = new SailRepository(sail);
 		ValueFactory vf = repository.getValueFactory();
 

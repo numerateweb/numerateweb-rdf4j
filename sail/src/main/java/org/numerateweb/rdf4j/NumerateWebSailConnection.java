@@ -17,17 +17,17 @@ import org.slf4j.LoggerFactory;
 import java.util.HashSet;
 import java.util.Set;
 
-public class NumerateWebInferencerConnection extends InferencerConnectionWrapper
+public class NumerateWebSailConnection extends InferencerConnectionWrapper
 		implements SailConnectionListener {
 
-	static private final Logger logger = LoggerFactory.getLogger(NumerateWebInferencerConnection.class);
+	static private final Logger logger = LoggerFactory.getLogger(NumerateWebSailConnection.class);
 
-	private final NumerateWebInferencer sail;
+	private final NumerateWebSail sail;
 
 	private Set<Resource> changedResources = new HashSet<>();
 	private Set<Resource> changedClasses = new HashSet<>();
 
-	public NumerateWebInferencerConnection(NumerateWebInferencer sail, InferencerConnection con) {
+	public NumerateWebSailConnection(NumerateWebSail sail, InferencerConnection con) {
 		super(con);
 		this.sail = sail;
 		con.addConnectionListener(this);

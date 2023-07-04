@@ -22,16 +22,10 @@ import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.rio.RDFFormat;
 import org.eclipse.rdf4j.sail.NotifyingSail;
-import org.eclipse.rdf4j.sail.lmdb.LmdbStore;
-import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
 import org.eclipse.rdf4j.sail.memory.MemoryStore;
-import org.numerateweb.rdf4j.NumerateWebInferencer;
+import org.numerateweb.rdf4j.NumerateWebSail;
 import org.openjdk.jmh.annotations.*;
 import org.openjdk.jmh.infra.BenchmarkParams;
-import org.openjdk.jmh.runner.Runner;
-import org.openjdk.jmh.runner.RunnerException;
-import org.openjdk.jmh.runner.options.Options;
-import org.openjdk.jmh.runner.options.OptionsBuilder;
 
 import java.io.File;
 import java.io.IOException;
@@ -156,13 +150,13 @@ public abstract class InferencingBenchmarkBase {
 		}
 		file = Files.newTemporaryFolder();
 
-		/*LmdbStoreConfig config = new LmdbStoreConfig();
+		/*NumerateWebSailConfig config = new NumerateWebSailConfig();
 		config.setForceSync(false);
 		config.setTripleDBSize(100_000_000);
 		config.setValueDBSize(100_000_000);
 		NotifyingSail store = new LmdbStore(file, config);*/
 		MemoryStore store = new MemoryStore();
-		NumerateWebInferencer sail = createInferencer(store);
+		NumerateWebSail sail = createInferencer(store);
 
 		repository = new SailRepository(sail);
 		connection = repository.getConnection();
@@ -170,7 +164,7 @@ public abstract class InferencingBenchmarkBase {
 		System.gc();
 	}
 
-	protected abstract NumerateWebInferencer createInferencer(NotifyingSail store);
+	protected abstract NumerateWebSail createInferencer(NotifyingSail store);
 
 	@TearDown(Level.Invocation)
 	public void afterClass() throws IOException {
