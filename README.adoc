@@ -1,8 +1,98 @@
 = Numerate Web components for RDF4J
 
-This repository contains an RDF4J SAIL implementation for running mathematical computations on RDF data.
+This is an RDF4J SAIL implementation for mathematical computations with RDF.
+
+Numerate Web is based on https://openmath.org/[OpenMath] to define formulas for running spreadsheet-like calculations on RDF data. These formulas can be expressed in https://numerateweb.org/specification/#popcorn-ld-a-textual-syntax[POPCORN-LD], a simple human-friendly syntax for mathematical objects that is also compatible with RDF. For example, a simple formula for the area of a rectangle with the sides `a` and `b` can be expressed as `@a * @b`. The area of a triangle can be calculated using its semi perimeter `$s` via `$s := (@a + @b + @c) / 2; root($s * ($s - @a) * ($s - @b) * ($s - @c), 2)`.
+
+The formulas can be defined in Numerate Web rules files `.nwrules` using a Manchester inspired syntax:
+
+.polygons.nwrules
+[source]
+----
+Prefix: : <http://example.org/>
+
+Class: Rectangle
+  Constraint:
+    area = @a * @b
+
+Class: Triangle
+  Constraint:
+    area = $s := @semiPerimeter; root($s * ($s - @a) * ($s - @b) * ($s - @c), 2),
+    semiPerimeter = (@a + @b + @c) / 2
+----
+
+Alternatively, the rules can be represented in RDF as shown in the following example:
+
+.polygons.ttl
+[source,turtle]
+----
+@prefix :       <http://example.org/> .
+@prefix mathrl: <http://numerateweb.org/vocab/math/rules#> .
+@prefix sh:     <http://www.w3.org/ns/shacl#> .
+@prefix owl:    <http://www.w3.org/2002/07/owl#> .
+
+: sh:declare [
+  sh:prefix "" ; sh:namespace "http://example.org/"^^xsd:anyURI ;
+] .
+
+:Rectangle a owl:Class ; mathrl:constraint [
+  a mathrl:Constraint ; sh:prefixes : ;
+  mathrl:onProperty :area ;
+  mathrl:expressionString  "@a * @b"
+] .
+
+:Triangle a owl:Class ; mathrl:constraint [
+  a mathrl:Constraint ; sh:prefixes : ;
+  mathrl:onProperty :area ;
+  mathrl:expressionString "$s := @semiPerimeter; root($s * ($s - @a) * ($s - @b) * ($s - @c), 2)"
+], [
+  a mathrl:Constraint ; sh:prefixes : ;
+  mathrl:onProperty :semiPerimeter ;
+  mathrl:expressionString
+  "(@a + @b + @c) / 2"
+] .
+----
+
+== Features
+
+* [*] RDF4J stackable SAIL
+* [*] incremental recomputation
+* [*] named graphs support
+** use `owl:imports` to define readable graphs
+** new triples for resources are stored in same graph as their `rdf:type` declarations
+* [*] express formulas in:
+** https://numerateweb.org/specification/#popcorn-ld-a-textual-syntax[POPCORN-LD]
+** https://openmath.org/om-rdf/[OpenMath-RDF]
+* [*] planned:
+** [ ] support quantities and units (QUDT and others)
+** [ ] bi-directional conversion between OpenMath-RDF and POPCORN-LD
 
 == Structure of the repository
+
+examples:: Example programs and resources for using the Numerate Web RDF4J SAIL.
+sail:: Implementation and tests of the Numerate Web RDF4J SAIL.
+
+== Usage
+
+The class `NumerateWebSail` is a https://rdf4j.org/documentation/reference/sail/#stacking-sails[stackable RDF4J SAIL].
+It can be combined with an RDF4J store implementing the `NotifyingSail` interface as follows:
+
+[source,java]
+----
+import org.eclipse.rdf4j.repository.Repository;
+import org.eclipse.rdf4j.repository.RepositoryConnection;
+import org.eclipse.rdf4j.repository.sail.SailRepository;
+import org.eclipse.rdf4j.sail.memory.MemoryStore;
+import org.numerateweb.rdf4j.NumerateWebSail;
+
+// ...
+
+MemoryStore store = new MemoryStore();
+NumerateWebSail sail = new NumerateWebSail(store);
+// enable or disable incremental inference; default is enabled
+sail.setIncrementalInference(true);
+Repository repository = new SailRepository(sail);
+----
 
 == Building all modules
 - This is a plain Maven project.
