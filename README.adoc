@@ -1,3 +1,5 @@
+image:https://jitpack.io/v/numerateweb/numerateweb-rdf4j.svg["Numerate Web components for RDF4J", link="https://jitpack.io/#numerateweb/numerateweb-rdf4j"]
+
 = Numerate Web components for RDF4J
 
 This is an RDF4J SAIL implementation for mathematical computations with RDF.
