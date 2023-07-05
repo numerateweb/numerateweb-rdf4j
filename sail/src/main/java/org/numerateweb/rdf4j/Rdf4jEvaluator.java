@@ -179,11 +179,7 @@ class Rdf4jEvaluator extends SimpleEvaluator {
 	@Override
 	protected Object getPropertyValue(Object subject, IReference property) {
 		try (IExtendedIterator<?> it = modelAccess.getPropertyValues(subject, property, Optional.empty())) {
-			if (!it.hasNext()) {
-				return null;
-			} else {
-				return it.toList();
-			}
+			return it.toList();
 		}
 	}
 }

@@ -64,11 +64,9 @@ import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
 class Rdf4jModelAccess implements IModelAccess {
-	private static final Dataset ALL_GRAPHS = new SimpleDataset();
 	protected static final String MATH_OBJECT_QUERY = new StringBuilder()
 			.append("prefix rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> ")
 			.append("prefix math: <http://numerateweb.org/vocab/math#> ")
-			.append("prefix mathrl: <http://numerateweb.org/vocab/math/rules#> ")
 			.append("construct {")
 			.append("?s ?p ?o . ")
 			.append("} where {")
@@ -114,6 +112,7 @@ class Rdf4jModelAccess implements IModelAccess {
 			return defaultNamespaces.length + 1;
 		}
 	};
+	private static final Dataset ALL_GRAPHS = new SimpleDataset();
 	static private final Logger logger = LoggerFactory.getLogger(Rdf4jModelAccess.class);
 	private static final String CONSTRAINT_QUERY = PREFIX + SparqlUtils.prefix("mathrl", NWRULES.NAMESPACE)
 			+ "SELECT distinct ?constraint ?property { " //
@@ -125,10 +124,10 @@ class Rdf4jModelAccess implements IModelAccess {
 	private static final String SELECT_INSTANCES = PREFIX + "SELECT DISTINCT ?instance { ?instance a ?class . }";
 	protected static final ParsedQuery instancesQuery = QueryParserUtil.parseQuery(QueryLanguage.SPARQL, SELECT_INSTANCES,
 			null);
-	protected final ValueFactory valueFactory;
-	private final IRI USED_BY;
 	private static final ParsedQuery namespacesQuery = QueryParserUtil.parseQuery(QueryLanguage.SPARQL, PREFIX +
 			"SELECT DISTINCT ?prefix ?namespace WHERE { ?resource sh:prefixes/owl:imports*/sh:declare [ sh:prefix ?prefix ; sh:namespace ?namespace ] }", null);
+	protected final ValueFactory valueFactory;
+	private final IRI USED_BY;
 	private final Supplier<SailConnection> connection;
 	private final Supplier<Resource[]> context;
 	private final Supplier<Dataset> dataset;
@@ -139,18 +138,6 @@ class Rdf4jModelAccess implements IModelAccess {
 	private Cache<Pair<Resource, Resource>, Boolean> dependencyCache = CacheBuilder.newBuilder().maximumSize(100000).build();
 	private ICache<Resource, ResourceInfo> resourceInfos;
 	private Cache<String, OMObject> expressionCache = CacheBuilder.newBuilder().maximumSize(10000).build();
-
-	static class ConstraintInfo {
-		final Resource graph;
-		final IReference property;
-		final ResultSpec<OMObject> mathObj;
-
-		ConstraintInfo(Resource graph, IReference property, ResultSpec<OMObject> mathObj) {
-			this.graph = graph;
-			this.property = property;
-			this.mathObj = mathObj;
-		}
-	}
 
 	public Rdf4jModelAccess(LiteralConverter literalConverter, ValueFactory valueFactory,
 	                        Supplier<SailConnection> connection, Supplier<Resource[]> context,
@@ -188,9 +175,9 @@ class Rdf4jModelAccess implements IModelAccess {
 				.get().evaluate(mathObjectQuery.getTupleExpr(), dataset.get(), bindingSet, false)) {
 			while (bindingsIter.hasNext()) {
 				BindingSet bindings = bindingsIter.next();
-				Value subj = bindings.getValue("s");
-				Value pred = bindings.getValue("p");
-				Value obj = bindings.getValue("o");
+				Value subj = bindings.getValue("subject");
+				Value pred = bindings.getValue("predicate");
+				Value obj = bindings.getValue("object");
 				if (subj instanceof Resource && pred instanceof IRI && obj != null) {
 					statements.add(new Statement(valueConverter.fromRdf4j((Resource) subj),
 							valueConverter.fromRdf4j((IRI) pred), valueConverter.fromRdf4j(obj)));
@@ -198,7 +185,8 @@ class Rdf4jModelAccess implements IModelAccess {
 			}
 		}
 		NWMathGraphParser parser = new NWMathGraphParser(statements, INamespaces.empty());
-		return parser.parse(valueConverter.fromRdf4j(mathObj), new OMObjectBuilder());
+		OMObject parsedObj = parser.parse(valueConverter.fromRdf4j(mathObj), new OMObjectBuilder());
+		return parsedObj;
 	}
 
 	protected ResourceInfo getResourceInfo(Resource resource) {
@@ -259,7 +247,7 @@ class Rdf4jModelAccess implements IModelAccess {
 		Set<IRI> graphs = dataset.get().getDefaultGraphs();
 		for (Resource clazz : resourceInfo.types) {
 			Stream<ConstraintInfo> constraints = getConstraintsForClass(clazz).stream();
-			if (! graphs.isEmpty()) {
+			if (!graphs.isEmpty()) {
 				// only consider accessible graphs
 				constraints = constraints.filter(c -> c.graph == null || graphs.contains(c.graph));
 			}
@@ -285,7 +273,7 @@ class Rdf4jModelAccess implements IModelAccess {
 
 					Resource[] readCtx;
 					if (definingGraph != null) {
-						readCtx = new Resource[] { definingGraph };
+						readCtx = new Resource[]{definingGraph};
 					} else {
 						readCtx = EMPTY_CTX;
 					}
@@ -316,7 +304,21 @@ class Rdf4jModelAccess implements IModelAccess {
 								OMObject.OMSTR(e.toString())});
 					}
 					if (mathObj == null) {
-						mathObj = parseExpression(constraintResource);
+						try (CloseableIteration<? extends org.eclipse.rdf4j.model.Statement, SailException> stmts =
+								     connection.get().getStatements(constraintResource,
+										     valueFactory.createIRI(NWRULES.NAMESPACE, "expression"),
+										     null, false, readCtx)) {
+							if (stmts.hasNext()) {
+								org.eclipse.rdf4j.model.Statement stmt = stmts.next();
+								if (stmt.getObject() instanceof Resource) {
+									mathObj = parseExpression((Resource) stmt.getObject());
+								}
+							}
+						}
+					}
+					if (mathObj == null) {
+						OMObject.OME(new OMObject[]{OMObject.OMS("nw:error"),
+								OMObject.OMSTR("Expression for constraint '" + constraintResource + "' missing.")});
 					}
 					constraints.add(new ConstraintInfo(definingGraph, valueConverter.fromRdf4j(propertyResource),
 							ResultSpec.create(Cardinality.SINGLE, mathObj)));
@@ -380,7 +382,13 @@ class Rdf4jModelAccess implements IModelAccess {
 					baseConn.hasStatement((Resource) stmt.getObject(), RDF.TYPE, restrictionResource,
 							true, readCtx));
 		}
+		if (logger.isDebugEnabled()) {
+			logger.debug("get property {} {}", subject, property);
+		}
 		return WrappedIterator.create(stmts.map(stmt -> {
+			if (logger.isDebugEnabled()) {
+				logger.debug("        -> {}", stmt.getObject());
+			}
 			if (stmt.getObject().isLiteral()) {
 				return literalConverter.createObject((ILiteral) valueConverter.fromRdf4j(stmt.getObject()));
 			}
@@ -453,5 +461,17 @@ class Rdf4jModelAccess implements IModelAccess {
 
 	public void invalidateType(Resource subject) {
 		resourceInfos.remove(subject);
+	}
+
+	static class ConstraintInfo {
+		final Resource graph;
+		final IReference property;
+		final ResultSpec<OMObject> mathObj;
+
+		ConstraintInfo(Resource graph, IReference property, ResultSpec<OMObject> mathObj) {
+			this.graph = graph;
+			this.property = property;
+			this.mathObj = mathObj;
+		}
 	}
 }

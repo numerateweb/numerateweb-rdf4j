@@ -293,6 +293,7 @@ public class NumerateWebSail extends NotifyingSailWrapper {
 							}
 						});
 			}
+			datasetInfo = new DatasetInfo();
 			datasetInfo.context = contexts.toArray(new Resource[contexts.size()]);
 			for (Resource ctx : contexts) {
 				datasetInfo.dataset.addDefaultGraph((IRI) ctx);
