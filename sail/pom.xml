@@ -4,7 +4,7 @@
 	<parent>
 		<groupId>com.github.numerateweb.numerateweb-rdf4j</groupId>
 		<artifactId>numerateweb-rdf4j-parent</artifactId>
-		<version>1.0.0</version>
+		<version>1.0.0-SNAPSHOT</version>
 	</parent>
 	<artifactId>numerateweb-rdf4j-sail</artifactId>
 	<name>Numerate Web: RDF4J SAIL</name>
