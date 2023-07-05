@@ -183,6 +183,41 @@
 		<module>examples</module>
 	</modules>
 
+	<profiles>
+		<profile>
+			<id>update-licenses</id>
+			<build>
+				<plugins>
+					<plugin>
+						<groupId>com.mycila</groupId>
+						<artifactId>license-maven-plugin</artifactId>
+						<version>4.1</version>
+						<configuration>
+							<header>releng/license-header.txt</header>
+							<properties>
+								<license.owners>Numerate Web contributors</license.owners>
+								<license.years>2023</license.years>
+							</properties>
+							<includes>
+								<include>src/*/java/**/*.java</include>
+							</includes>
+							<skipExistingHeaders>false</skipExistingHeaders>
+						</configuration>
+						<executions>
+							<execution>
+								<id>first</id>
+								<goals>
+									<goal>format</goal>
+								</goals>
+								<phase>process-sources</phase>
+							</execution>
+						</executions>
+					</plugin>
+				</plugins>
+			</build>
+		</profile>
+	</profiles>
+
 	<repositories>
 		<repository>
 			<id>jitpack.io</id>
