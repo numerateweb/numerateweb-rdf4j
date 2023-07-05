@@ -1,0 +1,95 @@
+@prefix rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
+@prefix owl: <http://www.w3.org/2002/07/owl#> .
+@prefix xsd: <http://www.w3.org/2001/XMLSchema#> .
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix komma: <http://enilink.net/vocab/komma#> .
+@prefix p: <http://example.org/vocab/processes#> .
+@prefix r: <http://example.org/resources#> .
+
+@base <http://example.org/model> .
+
+<> a owl:Ontology ;
+	owl:imports <http://example.org/vocab/processes>, <http://example.org/processes/rules>, <http://example.org/resources> .
+
+<#Bauteilbeschnitt> a p:ProcessBlueprint .
+
+<#Handling1_Variante_A> p:plan <#PlanA> ;
+	p:realizes <#Handling_1> ;
+	p:resource r:Roboter_einfach ;
+	a p:Process .
+
+<#Handling2_Variante_A> p:plan <#PlanA> ;
+	p:realizes <#Handling_2> ;
+	p:resource r:Roboter_doppelt ;
+	a p:Process .
+
+<#Handling3_Variante_A> p:plan <#PlanA> ;
+	p:realizes <#Handling_3> ;
+	p:resource r:Roboter_einfach_Entnahme_Presse ;
+	a p:Process .
+
+<#Handling_1> komma:precedes <#Platinenerwärmung> ;
+	a p:ProcessBlueprint ;
+	rdfs:comment "Einlege- und Entnahmegreifer (Entstapelung und Transport der Platine zum Ofen)" .
+
+<#Handling_2> komma:precedes <#Warmumformung> ;
+	a p:ProcessBlueprint ;
+	rdfs:comment "Transport der Platine vom Ofen zur Presse" .
+
+<#Handling_3> komma:precedes <#Bauteilbeschnitt> ;
+	a p:ProcessBlueprint ;
+	rdfs:comment "Entnahmegreifer aus der Presse\n2 Roboter mit je einem Greifer teilen sich 25 s" .
+
+<#Hartbeschnitt_Variante_A> p:plan <#PlanA> ;
+	p:realizes <#Bauteilbeschnitt> ;
+	p:resource r:Hartbeschnitt_RessourceA ;
+	a p:Process .
+
+<#Laserbeschnitt_Variante_A> p:plan <#PlanA> ;
+	p:realizes <#Bauteilbeschnitt> ;
+	p:resource r:Laserbeschnitt_RessourceA ;
+	a p:Process .
+
+<#MasterDataA> p:energyPriceElectrical 0.08 ;
+	p:energyPriceGas 0.0342 ;
+	p:interestRate "0.07"^^xsd:double ;
+	p:occupanyCostRate "160"^^xsd:decimal ;
+	p:workHoursPerDay "24"^^xsd:int ;
+	p:workHoursPerYear "6000"^^xsd:int ;
+	a p:MasterData ;
+	rdfs:label "Einfacher Grunddatensatz" .
+
+<#PlanA> p:masterData <#MasterDataA> ;
+	p:partsPerYear "1600000.0"^^xsd:double ;
+	p:taktTime "13.5"^^xsd:double ;
+	a p:Plan .
+
+<#Platinenerwärmung> komma:precedes <#Handling_2> ;
+	a p:ProcessBlueprint .
+
+<#Platinenerwärmung_Variante_A> p:plan <#PlanA> ;
+	p:realizes <#Platinenerwärmung> ;
+	p:resource r:Platinenerwärmung_RessourceA ;
+	a p:ProcessWithGas .
+
+<#Platinenzuschnitt> komma:precedes <#Handling_1> ;
+	a p:ProcessBlueprint .
+
+<#Platinenzuschnitt_Variante_A> p:plan <#PlanA> ;
+	p:realizes <#Platinenzuschnitt> ;
+	p:resource r:Platinenzuschnitt_RessourceA ;
+	a p:Process .
+
+<#Presshärten_Variante_A> p:plan <#PlanA> ;
+	p:realizes <#Warmumformung> ;
+	p:resource r:Presshärten_RessourceA ;
+	a p:Process .
+
+<#Warmumformung> komma:precedes <#Handling_3> ;
+	a p:ProcessBlueprint .
+
+<#PK_Zellstrukturen> p:subProcess <#Bauteilbeschnitt>, <#Handling_1>, <#Handling_2>, <#Handling_3>, <#Platinenerwärmung>, <#Platinenzuschnitt>, <#Warmumformung> ;
+	a p:ProcessBlueprint ;
+	rdfs:comment "Beschreibung der gesamten Prozesskette Presshärten" ;
+	rdfs:label "Prozesskette Presshärten" .
+

@@ -1,0 +1,320 @@
+@prefix owl: <http://www.w3.org/2002/07/owl#> .
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix xsd: <http://www.w3.org/2001/XMLSchema#> .
+
+@base <http://example.org/vocab/processes> .
+
+<>
+  a owl:Ontology ;
+  rdfs:label "Processes and Resources Ontology" .
+
+<#MasterData>
+  a owl:Class ;
+  rdfs:subClassOf owl:Thing .
+
+<#Plan>
+  a owl:Class ;
+  rdfs:subClassOf [
+    a owl:Restriction ;
+    owl:allValuesFrom <#MasterData> ;
+    owl:onProperty <#masterData>
+  ], [
+    a owl:Restriction ;
+    owl:cardinality "1"^^xsd:int ;
+    owl:onProperty <#masterData>
+  ], [
+    a owl:Restriction ;
+    owl:cardinality "1"^^xsd:int ;
+    owl:onProperty <#partsPerHour>
+  ], [
+    a owl:Restriction ;
+    owl:cardinality "1"^^xsd:int ;
+    owl:onProperty <#partsPerYear>
+  ], owl:Thing .
+
+<#Process>
+  a owl:Class ;
+  rdfs:subClassOf [
+    a owl:Restriction ;
+    owl:onProperty <#realizes> ;
+    owl:someValuesFrom <#ProcessBlueprint>
+  ], [
+    a owl:Restriction ;
+    owl:onProperty <#resource> ;
+    owl:someValuesFrom <#Resource>
+  ], [
+    a owl:Restriction ;
+    owl:onProperty <#plan> ;
+    owl:someValuesFrom <#Plan>
+  ], owl:Thing .
+
+<#ProcessBlueprint>
+  a owl:Class ;
+  rdfs:subClassOf [
+    a owl:Restriction ;
+    owl:onProperty <#subProcess> ;
+    owl:someValuesFrom <#ProcessBlueprint>
+  ], owl:Thing .
+
+<#ProcessWithGas>
+  a owl:Class ;
+  rdfs:subClassOf <#Process> .
+
+<#Resource>
+  a owl:Class ;
+  rdfs:subClassOf [
+    a owl:Restriction ;
+    owl:cardinality "1"^^xsd:int ;
+    owl:onProperty <#investmentCosts>
+  ], [
+    a owl:Restriction ;
+    owl:cardinality "1"^^xsd:int ;
+    owl:onProperty <#economicLife>
+  ], [
+    a owl:Restriction ;
+    owl:cardinality "1"^^xsd:int ;
+    owl:onProperty <#requiredSpace>
+  ], [
+    a owl:Restriction ;
+    owl:cardinality "1"^^xsd:int ;
+    owl:onProperty <#inputPowerElectrical>
+  ], [
+    a owl:Restriction ;
+    owl:allValuesFrom <#Tool> ;
+    owl:onProperty <#uses>
+  ], owl:Thing .
+
+<#Tool>
+  a owl:Class ;
+  rdfs:subClassOf <#Resource> .
+
+<#capacity>
+  a owl:DatatypeProperty ;
+  rdfs:comment "Menge der Teile, die pro Bearbeitung hergestellt werden können." ;
+  rdfs:range xsd:int ;
+  rdfs:subPropertyOf <#resourceProperty> .
+
+<#costsPerPart>
+  a owl:DatatypeProperty ;
+  rdfs:label "Kosten pro Teil [€]" ;
+  rdfs:subPropertyOf <#resourceProcessProperty> .
+
+<#costsPerYear>
+  a owl:DatatypeProperty ;
+  rdfs:label "Jährliche maschinenabhängige Kosten [€/Jahr]" ;
+  rdfs:range xsd:decimal ;
+  rdfs:subPropertyOf <#resourceProcessProperty> .
+
+<#depreciation>
+  a owl:DatatypeProperty ;
+  rdfs:label "Depreciation [€/Year]"@en, "Abschreibung [€/Jahr]" ;
+  rdfs:range xsd:decimal ;
+  rdfs:subPropertyOf <#resourceProperty> .
+
+<#economicLife>
+  a owl:DatatypeProperty ;
+  rdfs:label "Economic Life [Years]"@en, "Nutzungsdauer [Jahre]" ;
+  rdfs:range xsd:int ;
+  rdfs:subPropertyOf <#resourceProperty> .
+
+<#energyCosts>
+  a owl:DatatypeProperty ;
+  rdfs:subPropertyOf <#resourceProcessProperty> .
+
+<#energyCostsElectrical>
+  a owl:DatatypeProperty ;
+  rdfs:label "Energiekosten elektrisch [€/Jahr]" ;
+  rdfs:range xsd:double ;
+  rdfs:subPropertyOf <#resourceProcessProperty> .
+
+<#energyCostsGas>
+  a owl:DatatypeProperty ;
+  rdfs:label "Energiekosten Erdgas [€/Jahr]" ;
+  rdfs:range xsd:double ;
+  rdfs:subPropertyOf <#resourceProcessProperty> .
+
+<#energyElectrical>
+  a owl:DatatypeProperty ;
+  rdfs:label "Energieverbrauch elektrisch" ;
+  rdfs:range xsd:double ;
+  rdfs:subPropertyOf <#resourceProcessProperty> .
+
+<#energyGas>
+  a owl:DatatypeProperty ;
+  rdfs:label "Energieverbrauch Erdgas" ;
+  rdfs:range xsd:double ;
+  rdfs:subPropertyOf <#resourceProcessProperty> .
+
+<#energyPriceElectrical>
+  a owl:DatatypeProperty ;
+  rdfs:label "Energiepreis elektrisch [€/kWh]" ;
+  rdfs:range xsd:decimal ;
+  rdfs:subPropertyOf <#masterDataProperty> .
+
+<#energyPriceGas>
+  a owl:DatatypeProperty ;
+  rdfs:label "Energiepreis Erdgas [€/kWh]" ;
+  rdfs:range xsd:decimal ;
+  rdfs:subPropertyOf <#masterDataProperty> .
+
+<#fullLoadHours>
+  a owl:DatatypeProperty ;
+  rdfs:label "Lastlaufzeit [h/Jahr]" ;
+  rdfs:subPropertyOf <#resourceProcessProperty> .
+
+<#imputedInterest>
+  a owl:DatatypeProperty ;
+  rdfs:label "kalkulatorische Zinsen [€/Jahr]" ;
+  rdfs:range xsd:decimal ;
+  rdfs:subPropertyOf <#resourceProcessProperty> .
+
+<#inputPowerElectrical>
+  a owl:DatatypeProperty ;
+  rdfs:label "Input power electrical [kW]"@en, "Leistungsaufnahme elektrisch [kW]" ;
+  rdfs:range xsd:decimal ;
+  rdfs:subPropertyOf <#resourceProperty> .
+
+<#inputPowerGas>
+  a owl:DatatypeProperty ;
+  rdfs:label "Leistungsaufnahme Erdgas [kW]" ;
+  rdfs:range xsd:decimal ;
+  rdfs:subPropertyOf <#resourceProperty> .
+
+<#interestRate>
+  a owl:DatatypeProperty ;
+  rdfs:label "Zinssatz" ;
+  rdfs:range xsd:double ;
+  rdfs:subPropertyOf <#masterDataProperty> .
+
+<#investmentCosts>
+  a owl:DatatypeProperty ;
+  rdfs:label "Investment costs [€]"@en, "Anschaffungskosten [€]" ;
+  rdfs:range xsd:decimal ;
+  rdfs:subPropertyOf <#resourceProperty> .
+
+<#machineHourRate>
+  a owl:DatatypeProperty ;
+  rdfs:label "Maschinenstundensatz [€/h]" ;
+  rdfs:range xsd:double ;
+  rdfs:subPropertyOf <#resourceProcessProperty> .
+
+<#maintenanceCosts>
+  a owl:DatatypeProperty ;
+  rdfs:label "Maintenance costs [€/Year]"@en, "Instandhaltungskosten [€/Jahr]" ;
+  rdfs:range xsd:decimal ;
+  rdfs:subPropertyOf <#resourceProperty> .
+
+<#masterData>
+  a owl:ObjectProperty ;
+  rdfs:subPropertyOf owl:topObjectProperty .
+
+<#masterDataProperty>
+  a owl:DatatypeProperty ;
+  rdfs:subPropertyOf owl:topDataProperty .
+
+<#maxPartsPerHour>
+  a owl:DatatypeProperty ;
+  rdfs:comment "maximale Produktionsmenge bei Vollauslastung (100%) pro Stunde" ;
+  rdfs:label "Maximale Produktionsmenge pro Stunde" ;
+  rdfs:subPropertyOf <#resourceProcessProperty> .
+
+<#occupancyCosts>
+  a owl:DatatypeProperty ;
+  rdfs:subPropertyOf <#resourceProcessProperty> .
+
+<#occupanyCostRate>
+  a owl:DatatypeProperty ;
+  rdfs:label "Raumkostensatz [€/m²]" ;
+  rdfs:range xsd:decimal ;
+  rdfs:subPropertyOf <#masterDataProperty> .
+
+<#partsPerCycle>
+  a owl:DatatypeProperty ;
+  rdfs:comment "Menge der Teile, die innerhalb des Taktes hergestellt werden bzw. Menge der Teile, auf die sich die Kosten verteilen" ;
+  rdfs:label "Teile pro Takt" ;
+  rdfs:subPropertyOf <#resourceProcessProperty> .
+
+<#partsPerHour>
+  a owl:DatatypeProperty ;
+  rdfs:label "Produktionsmenge pro Stunde" ;
+  rdfs:range xsd:double ;
+  rdfs:subPropertyOf <#planProperty> .
+
+<#partsPerYear>
+  a owl:DatatypeProperty ;
+  rdfs:label "Produktionsmenge pro Jahr" ;
+  rdfs:range xsd:double ;
+  rdfs:subPropertyOf <#planProperty> .
+
+<#plan> a owl:ObjectProperty .
+<#planProperty> a owl:DatatypeProperty .
+<#price>
+  a owl:DatatypeProperty ;
+  rdfs:label "Price [€]"@en, "Kaufpreis [€]" ;
+  rdfs:range xsd:decimal ;
+  rdfs:subPropertyOf <#resourceProperty> .
+
+<#processTime>
+  a owl:DatatypeProperty ;
+  rdfs:comment "Zeitdauer, die für eine einzelne Bearbeitung benötigt wird. [s]" ;
+  rdfs:label "Process time [s]"@en, "Bearbeitungszeit [s]" ;
+  rdfs:range xsd:decimal ;
+  rdfs:subPropertyOf <#resourceProperty> .
+
+<#realizes>
+  a owl:ObjectProperty ;
+  rdfs:subPropertyOf owl:topObjectProperty .
+
+<#requiredSpace>
+  a owl:DatatypeProperty ;
+  rdfs:label "Required space [m²]"@en, "Flächenbedarf [m²]" ;
+  rdfs:range xsd:decimal ;
+  rdfs:subPropertyOf <#resourceProperty> .
+
+<#resource>
+  a owl:ObjectProperty ;
+  rdfs:subPropertyOf owl:topObjectProperty .
+
+<#resourceCount>
+  a owl:DatatypeProperty ;
+  rdfs:comment "Anzahl der notwendigen Ressourcen für die Erfüllung der im Plan vorgegebenen Taktzeit." ;
+  rdfs:range xsd:int ;
+  rdfs:subPropertyOf <#resourceProcessProperty> .
+
+<#resourceProcessProperty>
+  a owl:DatatypeProperty ;
+  rdfs:label "Raumkosten [€/Jahr]" ;
+  rdfs:subPropertyOf owl:topDataProperty .
+
+<#resourceProperty>
+  a owl:DatatypeProperty ;
+  rdfs:subPropertyOf owl:topDataProperty .
+
+<#subProcess>
+  a owl:ObjectProperty ;
+  rdfs:subPropertyOf <http://enilink.net/vocab/komma#orderedContains> .
+
+<#taktTime>
+  a owl:DatatypeProperty ;
+  rdfs:subPropertyOf <#planProperty> .
+
+<#uses>
+  a owl:ObjectProperty ;
+  rdfs:subPropertyOf owl:topObjectProperty .
+
+<#utilization>
+  a owl:DatatypeProperty ;
+  rdfs:label "Auslastung" ;
+  rdfs:subPropertyOf <#resourceProcessProperty> .
+
+<#workHoursPerDay>
+  a owl:DatatypeProperty ;
+  rdfs:label "Arbeitsstunden pro Tag [h/Tag]" ;
+  rdfs:range xsd:int ;
+  rdfs:subPropertyOf <#masterDataProperty> .
+
+<#workHoursPerYear>
+  a owl:DatatypeProperty ;
+  rdfs:label "Arbeitsstunden pro Jahr [h/Jahr]" ;
+  rdfs:range xsd:int ;
+  rdfs:subPropertyOf <#masterDataProperty> .

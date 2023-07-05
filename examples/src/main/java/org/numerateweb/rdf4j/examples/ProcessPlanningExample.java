@@ -15,6 +15,7 @@
  */
 package org.numerateweb.rdf4j.examples;
 
+import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.repository.Repository;
 import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
@@ -24,20 +25,32 @@ import org.numerateweb.rdf4j.NumerateWebSail;
 
 import java.io.IOException;
 
-public class BrickExample {
+public class ProcessPlanningExample {
 
 	public static void main(String... args) throws IOException {
 		MemoryStore store = new MemoryStore();
 		NumerateWebSail sail = new NumerateWebSail(store);
 		Repository repository = new SailRepository(sail);
 		try {
+			ValueFactory vf = repository.getValueFactory();
+			String path = "/process-planning/";
 			try (RepositoryConnection connection = repository.getConnection()) {
-				connection.add(BrickExample.class.getResource("/brick/brick-example.ttl"), RDFFormat.TURTLE);
+				connection.begin();
+				connection.add(ProcessPlanningExample.class.getResource(path + "model.ttl"),
+						vf.createIRI("http://example.org/model"));
+				connection.add(ProcessPlanningExample.class.getResource(
+						path + "processes-vocab.ttl"),
+						vf.createIRI("http://example.org/vocab/processes"));
+				connection.add(ProcessPlanningExample.class.getResource(path + "resources.ttl"),
+						vf.createIRI("http://example.org/resources"));
+				connection.add(ProcessPlanningExample.class.getResource(path + "planning.nwrules"),
+						vf.createIRI("http://example.org/processes/rules"));
+				connection.commit();
 
 				connection.getStatements(null,
-						repository.getValueFactory().createIRI("https://brickschema.org/schema/Brick#grossArea"),
-						null).stream().forEach(stmt -> {
-					System.out.println(stmt.getSubject() + " has area " + stmt.getObject());
+						null,
+						null, vf.createIRI("http://example.org/model")).stream().forEach(stmt -> {
+					System.out.println(stmt);
 				});
 			}
 		} finally {

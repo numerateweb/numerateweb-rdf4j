@@ -1,0 +1,138 @@
+@prefix owl: <http://www.w3.org/2002/07/owl#> .
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix p: <http://example.org/vocab/processes#> .
+@prefix xsd: <http://www.w3.org/2001/XMLSchema#> .
+
+@base <http://example.org/resources> .
+
+<>
+  a owl:Ontology ;
+  rdfs:label "Resource Instances" ;
+  owl:imports <http://example.org/vocab/processes> .
+
+<#Greifer_doppelt>
+  p:economicLife "15"^^xsd:int ;
+  p:maintenanceCosts 0.0 ;
+  p:price 20000.0 ;
+  a p:Tool .
+
+<#Greifer_einfach>
+  p:economicLife "15"^^xsd:int ;
+  p:maintenanceCosts 0.0 ;
+  p:price 7000.0 ;
+  a p:Tool .
+
+<#Greifer_einfach_Entnahme_Presse>
+  p:economicLife "15"^^xsd:int ;
+  p:maintenanceCosts 0.0 ;
+  p:price 10500.0 ;
+  a p:Tool .
+
+<#Hartbeschnitt_RessourceA>
+  p:capacity "1"^^xsd:int ;
+  p:economicLife "15"^^xsd:int ;
+  p:inputPowerElectrical 36.67 ;
+  p:maintenanceCosts 30000.0 ;
+  p:price 2500000.0 ;
+  p:processTime 4.0 ;
+  p:requiredSpace 10.0 ;
+  p:uses <#Hartbeschnitt_WerkzeugA> ;
+  a p:Resource .
+
+<#Hartbeschnitt_WerkzeugA>
+  p:economicLife "7"^^xsd:int ;
+  p:maintenanceCosts 50000.0 ;
+  p:price 500000.0 ;
+  a p:Tool .
+
+<#Laserbeschnitt_RessourceA>
+  p:capacity "1"^^xsd:int ;
+  p:economicLife "15"^^xsd:int ;
+  p:inputPowerElectrical 6.0 ;
+  p:maintenanceCosts 31110.0 ;
+  p:price 700000.0 ;
+  p:processTime 120.0 ;
+  p:requiredSpace 50.0 ;
+  a p:Resource .
+
+<#Platinenzuschnitt_RessourceA>
+  p:capacity "2"^^xsd:int ;
+  p:economicLife "15"^^xsd:int ;
+  p:inputPowerElectrical 110.0 ;
+  p:maintenanceCosts 30000.0 ;
+  p:price 1520000.0 ;
+  p:processTime 2.0 ;
+  p:requiredSpace 35.0 ;
+  p:uses <#Platinenzuschnitt_WerkzeugA> ;
+  a p:Resource .
+
+<#Platinenzuschnitt_WerkzeugA>
+  p:economicLife "7"^^xsd:int ;
+  p:maintenanceCosts 7500.0 ;
+  p:price 75000.0 ;
+  p:requiredSpace 0.0 ;
+  a p:Tool .
+
+<#Presshärten_WerkzeugA>
+  p:economicLife "7"^^xsd:int ;
+  p:maintenanceCosts 50000.0 ;
+  p:price 500000.0 ;
+  p:requiredSpace 0.0 ;
+  a p:Tool .
+
+<#Presshärten_RessourceA>
+  p:capacity "2"^^xsd:int ;
+  p:economicLife "15"^^xsd:int ;
+  p:inputPowerElectrical 132.0 ;
+  p:investmentCosts 3.000000e+6 ;
+  p:maintenanceCosts 64500.0 ;
+  p:price 2500000.0 ;
+  p:processTime 25.0 ;
+  p:requiredSpace 10.0 ;
+  p:uses <#Presshärten_WerkzeugA> ;
+  a p:Resource .
+
+<#Roboter_doppelt>
+  p:capacity "2"^^xsd:int ;
+  p:economicLife "15"^^xsd:int ;
+  p:inputPowerElectrical 22.8 ;
+  p:maintenanceCosts 750.0 ;
+  p:price 58000.0 ;
+  p:processTime 12.5 ;
+  p:requiredSpace 30.0 ;
+  p:uses <#Greifer_doppelt> ;
+  a p:Resource .
+
+<#Roboter_einfach>
+  p:capacity "1"^^xsd:int ;
+  p:economicLife "15"^^xsd:int ;
+  p:inputPowerElectrical 22.8 ;
+  p:maintenanceCosts 750.0 ;
+  p:price 58000.0 ;
+  p:processTime 25.0 ;
+  p:requiredSpace 30.0 ;
+  p:uses <#Greifer_einfach> ;
+  a p:Resource .
+
+<#Roboter_einfach_Entnahme_Presse>
+  p:capacity "1"^^xsd:int ;
+  p:economicLife "15"^^xsd:int ;
+  p:inputPowerElectrical 22.8 ;
+  p:maintenanceCosts 750.0 ;
+  p:price 58000.0 ;
+  p:processTime 25.0 ;
+  p:requiredSpace 30.0 ;
+  p:uses <#Greifer_einfach_Entnahme_Presse> ;
+  a p:Resource .
+
+<#Platinenerwärmung_RessourceA>
+  p:capacity "2"^^xsd:int ;
+  p:economicLife "15"^^xsd:int ;
+  p:inputPowerElectrical 2.0 ;
+  p:inputPowerGas 933.0 ;
+  p:investmentCosts 1.200000e+6 ;
+  p:maintenanceCosts 30000.0 ;
+  p:price 1200000.0 ;
+  p:processTime 25.0 ;
+  p:requiredSpace 160.0 ;
+  a p:Resource .
