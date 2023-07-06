@@ -15,12 +15,15 @@
  */
 package org.numerateweb.rdf4j.examples;
 
+import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.ValueFactory;
+import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.repository.Repository;
 import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
-import org.eclipse.rdf4j.rio.RDFFormat;
 import org.eclipse.rdf4j.sail.memory.MemoryStore;
+import org.numerateweb.math.rdf.rules.NWRULES;
+import org.numerateweb.math.util.SparqlUtils;
 import org.numerateweb.rdf4j.NumerateWebSail;
 
 import java.io.IOException;
@@ -36,21 +39,35 @@ public class ProcessPlanningExample {
 			String path = "/process-planning/";
 			try (RepositoryConnection connection = repository.getConnection()) {
 				connection.begin();
+				// add the model with concrete process-resource-combinations
 				connection.add(ProcessPlanningExample.class.getResource(path + "model.ttl"),
 						vf.createIRI("http://example.org/model"));
+				// add vocabulary for describing processes and resources
 				connection.add(ProcessPlanningExample.class.getResource(
 						path + "processes-vocab.ttl"),
 						vf.createIRI("http://example.org/vocab/processes"));
+				// add data for the resources
 				connection.add(ProcessPlanningExample.class.getResource(path + "resources.ttl"),
 						vf.createIRI("http://example.org/resources"));
+				// add the mathematical formulas
 				connection.add(ProcessPlanningExample.class.getResource(path + "planning.nwrules"),
 						vf.createIRI("http://example.org/processes/rules"));
 				connection.commit();
 
-				connection.getStatements(null,
-						null,
-						null, vf.createIRI("http://example.org/model")).stream().forEach(stmt -> {
-					System.out.println(stmt);
+				String query = SparqlUtils.prefix("rdfs", RDF.NAMESPACE) +
+						SparqlUtils.prefix("mathrl", NWRULES.NAMESPACE)
+						+ "select ?instance ?property (round(?value * 100000) / 1000 AS ?roundedValue) { " //
+						+ "{ select * { "
+						+ "  ?c mathrl:constraint [ mathrl:onProperty ?property ] ." //
+						+ "  ?type rdfs:subClassOf* ?c" //
+						+ "} }"
+						+ "?instance a ?type ; ?property ?value" //
+						+ "} order by ?instance ?property";
+
+				connection.prepareTupleQuery(query).evaluate().stream().forEach(bindingSet -> {
+					System.out.println(bindingSet.getBinding("instance").getValue() + ": " +
+							bindingSet.getBinding("property").getValue() + " = " +
+							((Literal) bindingSet.getBinding("roundedValue").getValue()).doubleValue());
 				});
 			}
 		} finally {
