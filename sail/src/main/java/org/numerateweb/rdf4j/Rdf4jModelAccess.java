@@ -150,7 +150,7 @@ class Rdf4jModelAccess implements IModelAccess {
 		this.valueConverter = new RDF4JValueConverter(valueFactory);
 		this.resourceInfos = cacheManager.get(new TypeLiteral<>() {
 		});
-		this.USED_BY = valueFactory.createIRI("math:usedBy");
+		this.USED_BY = valueFactory.createIRI(NWRULES.NAMESPACE + "usedBy");
 	}
 
 	private static final String SELECT_DIRECT_SUPERCLASSES(boolean named) {
@@ -256,7 +256,7 @@ class Rdf4jModelAccess implements IModelAccess {
 		return properties;
 	}
 
-	protected List<ConstraintInfo> getConstraintsForClass(Resource clazz) {
+	public List<ConstraintInfo> getConstraintsForClass(Resource clazz) {
 		List<ConstraintInfo> constraints = classToConstraints.get(clazz);
 		if (constraints == null) {
 			constraints = new ArrayList<>();
@@ -459,7 +459,7 @@ class Rdf4jModelAccess implements IModelAccess {
 		dependencyCache.invalidateAll();
 	}
 
-	public void invalidateType(Resource subject) {
+	public void invalidateResourceInfo(Resource subject) {
 		resourceInfos.remove(subject);
 	}
 

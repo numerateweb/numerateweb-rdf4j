@@ -31,6 +31,7 @@ import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.vocabulary.OWL;
+import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.Dataset;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
@@ -44,6 +45,7 @@ import org.eclipse.rdf4j.sail.NotifyingSailConnection;
 import org.eclipse.rdf4j.sail.SailConnection;
 import org.eclipse.rdf4j.sail.SailException;
 import org.eclipse.rdf4j.sail.helpers.NotifyingSailWrapper;
+import org.eclipse.rdf4j.sail.helpers.SailConnectionWrapper;
 import org.eclipse.rdf4j.sail.inferencer.InferencerConnection;
 import org.numerateweb.math.rdf.NWMathModule;
 import org.numerateweb.math.rdf.rules.NWRULES;
@@ -54,6 +56,7 @@ import org.slf4j.LoggerFactory;
 
 import java.util.*;
 import java.util.function.Supplier;
+import java.util.stream.Collectors;
 
 public class NumerateWebSail extends NotifyingSailWrapper {
 
@@ -83,6 +86,7 @@ public class NumerateWebSail extends NotifyingSailWrapper {
 	volatile boolean inferencing = false;
 	IRI USED_BY;
 	IRI CONSTRAINT_PROPERTY;
+	IRI ONPROPERTY;
 	private DatasetInfo activeDataset = EMPTY_DATASET;
 	private Cache<Resource, DatasetInfo> datasetCache = CacheBuilder.newBuilder().maximumSize(10000).build();
 	private boolean incrementalInference = true;
@@ -110,8 +114,9 @@ public class NumerateWebSail extends NotifyingSailWrapper {
 		});
 		valueConverter = injector.getInstance(RDF4JValueConverter.class);
 		literalConverter = injector.getInstance(LiteralConverter.class);
-		USED_BY = getValueFactory().createIRI("math:usedBy");
+		USED_BY = getValueFactory().createIRI(NWRULES.NAMESPACE + "usedBy");
 		CONSTRAINT_PROPERTY = getValueFactory().createIRI(NWRULES.PROPERTY_CONSTRAINT.toString());
+		ONPROPERTY = getValueFactory().createIRI(NWRULES.PROPERTY_ONPROPERTY.toString());
 		Supplier<SailConnection> connSupplier = () -> this.connection.get();
 		Supplier<Resource[]> contextSupplier = () -> this.activeDataset.context;
 		Supplier<Dataset> datasetSupplier = () -> this.activeDataset.dataset;
@@ -125,42 +130,70 @@ public class NumerateWebSail extends NotifyingSailWrapper {
 		return new NumerateWebSailConnection(this, (InferencerConnection) super.getConnection());
 	}
 
-	public synchronized void reevaluate(SailConnection connection, Set<Resource> changedResources,
-	                                    Set<Resource> changedClasses) {
+	public synchronized void reevaluate(SailConnection connection, Map<Resource, List<Resource>> changedResources,
+	                                    Map<Resource, List<IRI>> changedClasses) {
 		try {
 			inferencing = true;
-
+			this.connection.set(connection);
 			modelAccess.clearDependencyCache();
 
-			this.connection.set(connection);
+			// find resources affected by class changes
+			for (Resource clazz : changedClasses.keySet()) {
+				((SailConnectionWrapper) connection).getWrappedConnection()
+						.getStatements(null, RDF.TYPE, clazz, false)
+						.stream()
+						.forEach(stmt -> changedResources.putIfAbsent(stmt.getSubject(), Collections.emptyList()));
+			}
+
+			// clear any inferred properties
+			for (Map.Entry<Resource, List<Resource>> entry : changedResources.entrySet()) {
+				Resource resource = entry.getKey();
+				// could be optimized by just removing the changed properties
+				propertyCache.invalidate(resource);
+
+				// combine removed and existing types
+				Set<Resource> types = new HashSet<>(entry.getValue());
+				((SailConnectionWrapper) connection).getWrappedConnection().
+						getStatements(resource, RDF.TYPE, null, false)
+						.stream()
+						.filter(stmt -> stmt.getObject() instanceof Resource)
+						.forEach(stmt -> {
+							types.add((Resource) stmt.getObject());
+						});
+				for (Resource type : types) {
+					List<IRI> properties = changedClasses.get(type);
+					if (properties == null) {
+						properties = modelAccess.getConstraintsForClass(type).stream()
+								.map(info -> modelAccess.mapProperty(info.property))
+								.distinct().collect(Collectors.toList());
+					}
+					for (IRI property : properties) {
+						((InferencerConnection) connection).removeInferredStatement(
+								resource, property, null);
+					}
+				}
+			}
+
 			if (!initialInferencingDone || !incrementalInference) {
 				doFullInferencing(connection);
 				initialInferencingDone = true;
 			} else {
-				doIncrementalInferencing(connection, changedResources, changedClasses);
+				doIncrementalInferencing(connection, changedResources);
 			}
 		} finally {
 			inferencing = false;
 		}
 	}
 
-	public void doIncrementalInferencing(SailConnection connection, Set<Resource> changedResources,
-	                                     Set<Resource> changedClasses) {
+	public void doIncrementalInferencing(SailConnection connection, Map<Resource, List<Resource>> changedResources) {
 		Set<Resource> seen = new HashSet<>();
 		Queue<Resource> toUpdate = new LinkedList<>();
 
 		logger.info("Updating {} resources", changedResources.size());
 
-		for (Resource instance : changedResources) {
-			// could be optimized by just removing the changed properties
-			propertyCache.invalidate(instance);
-
+		for (Resource instance : changedResources.keySet()) {
 			ResourceInfo instanceInfo = modelAccess.getResourceInfo(instance);
 			Set<IReference> properties = modelAccess.getPropertiesWithConstraintsOfResource(instanceInfo);
-			for (IReference property : properties) {
-				((InferencerConnection) connection).removeInferredStatement(instance,
-						modelAccess.mapProperty(property), null);
-			}
 			if (!properties.isEmpty()) {
 				if (seen.add(instance)) {
 					toUpdate.add(instance);
@@ -174,7 +207,6 @@ public class NumerateWebSail extends NotifyingSailWrapper {
 			}
 		}
 		changedResources.clear();
-		changedClasses.clear();
 
 		while (!toUpdate.isEmpty()) {
 			Resource instance = toUpdate.remove();
