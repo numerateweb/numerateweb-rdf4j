@@ -4,7 +4,14 @@ image:https://jitpack.io/v/numerateweb/numerateweb-rdf4j.svg["Numerate Web compo
 
 This is an RDF4J SAIL implementation for mathematical computations with RDF.
 
-Numerate Web is based on https://openmath.org/[OpenMath] to define formulas for running spreadsheet-like calculations on RDF data. These formulas can be expressed in https://numerateweb.org/specification/#popcorn-ld-a-textual-syntax[POPCORN-LD], a simple human-friendly syntax for mathematical objects that is also compatible with RDF. For example, a simple formula for the area of a rectangle with the sides `a` and `b` can be expressed as `@a * @b`. The area of a triangle can be calculated using its semi perimeter `$s` via `$s := (@a + @b + @c) / 2; root($s * ($s - @a) * ($s - @b) * ($s - @c), 2)`.
+Numerate Web is based on https://openmath.org/[OpenMath] to define formulas for running spreadsheet-like calculations on RDF data. These formulas can be expressed in https://numerateweb.org/specification/#popcorn-ld-a-textual-syntax[POPCORN-LD], a simple human-friendly syntax for mathematical objects that is also compatible with RDF. For example, a simple formula for the area of a rectangle with the sides `a` and `b` can be expressed as:
+----
+@a * @b
+----
+The area of a triangle can be calculated using its semi perimeter `$s` via:
+----
+$s := (@a + @b + @c) / 2; root($s * ($s - @a) * ($s - @b) * ($s - @c), 2)
+----
 
 The formulas can be defined in Numerate Web rules files `.nwrules` using a Manchester inspired syntax:
 
@@ -59,6 +66,8 @@ Alternatively, the rules can be represented in RDF as shown in the following exa
 
 * [*] RDF4J stackable SAIL
 * [*] incremental recomputation
+** changes to property values
+** schema changes
 * [*] named graphs support
 ** use `owl:imports` to define readable graphs
 ** new triples for resources are stored in same graph as their `rdf:type` declarations
