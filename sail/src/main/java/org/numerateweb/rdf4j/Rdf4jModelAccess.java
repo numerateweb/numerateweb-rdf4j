@@ -459,6 +459,10 @@ class Rdf4jModelAccess implements IModelAccess {
 		dependencyCache.invalidateAll();
 	}
 
+	public void invalidateClassInfo(Resource clazz) {
+		classToConstraints.remove(clazz);
+	}
+
 	public void invalidateResourceInfo(Resource subject) {
 		resourceInfos.remove(subject);
 	}

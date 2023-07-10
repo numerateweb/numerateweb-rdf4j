@@ -137,8 +137,11 @@ public class NumerateWebSail extends NotifyingSailWrapper {
 			this.connection.set(connection);
 			modelAccess.clearDependencyCache();
 
-			// find resources affected by class changes
 			for (Resource clazz : changedClasses.keySet()) {
+				// remove cached constraints
+				modelAccess.invalidateClassInfo(clazz);
+
+				// find resources affected by class changes
 				((SailConnectionWrapper) connection).getWrappedConnection()
 						.getStatements(null, RDF.TYPE, clazz, false)
 						.stream()
@@ -168,8 +171,11 @@ public class NumerateWebSail extends NotifyingSailWrapper {
 								.distinct().collect(Collectors.toList());
 					}
 					for (IRI property : properties) {
-						((InferencerConnection) connection).removeInferredStatement(
-								resource, property, null);
+						// remove statements for property in any context
+						connection.getStatements(resource, property, null, true).stream().forEach(stmt -> {
+							((InferencerConnection) connection).removeInferredStatement(stmt.getSubject(),
+									stmt.getPredicate(), stmt.getObject(), stmt.getContext());
+						});
 					}
 				}
 			}
@@ -186,8 +192,7 @@ public class NumerateWebSail extends NotifyingSailWrapper {
 	}
 
 	public void doIncrementalInferencing(SailConnection connection, Map<Resource, List<Resource>> changedResources) {
-		Set<Resource> seen = new HashSet<>();
-		Queue<Resource> toUpdate = new LinkedList<>();
+		Set<Resource> toUpdate = new HashSet<>();
 
 		logger.info("Updating {} resources", changedResources.size());
 
@@ -195,9 +200,8 @@ public class NumerateWebSail extends NotifyingSailWrapper {
 			ResourceInfo instanceInfo = modelAccess.getResourceInfo(instance);
 			Set<IReference> properties = modelAccess.getPropertiesWithConstraintsOfResource(instanceInfo);
 			if (!properties.isEmpty()) {
-				if (seen.add(instance)) {
-					toUpdate.add(instance);
-				}
+				toUpdate.add(instance);
+
 				// remove all incoming usedBy edges
 				connection.getStatements(null, USED_BY, instance, true).stream().forEach(stmt -> {
 					Resource parameter = stmt.getSubject();
@@ -208,8 +212,34 @@ public class NumerateWebSail extends NotifyingSailWrapper {
 		}
 		changedResources.clear();
 
-		while (!toUpdate.isEmpty()) {
-			Resource instance = toUpdate.remove();
+		Queue<Resource> queue = new LinkedList<>(toUpdate);
+		while (!queue.isEmpty()) {
+			Resource instance = queue.remove();
+			ResourceInfo instanceInfo = modelAccess.getResourceInfo(instance);
+
+			// recursively update dependents
+			connection.getStatements(instance, USED_BY, null, true).stream().forEach(stmt -> {
+				Resource usedBy = (Resource) stmt.getObject();
+				((InferencerConnection) connection).removeInferredStatement(instance, USED_BY, stmt.getObject(),
+						stmt.getContext());
+				if (toUpdate.add(usedBy)) {
+					propertyCache.invalidate(usedBy);
+
+					ResourceInfo usedByInfo = modelAccess.getResourceInfo(instance);
+					Set<IReference> properties = modelAccess.getPropertiesWithConstraintsOfResource(usedByInfo);
+					for (Resource usedByCtx : instanceInfo.contexts) {
+						for (IReference property : properties) {
+							((InferencerConnection) connection).removeInferredStatement(usedBy,
+									modelAccess.mapProperty(property), null, usedByCtx);
+						}
+					}
+				}
+			});
+		}
+
+		queue = new LinkedList<>(toUpdate);
+		while (!queue.isEmpty()) {
+			Resource instance = queue.remove();
 			ResourceInfo instanceInfo = modelAccess.getResourceInfo(instance);
 
 			for (Resource context : instanceInfo.contexts) {
@@ -220,26 +250,6 @@ public class NumerateWebSail extends NotifyingSailWrapper {
 				for (IReference property : modelAccess.getPropertiesWithConstraintsOfResource(instanceInfo)) {
 					evaluator.evaluateRoot(instance, property, Optional.empty());
 				}
-
-				// recursively update dependents
-				connection.getStatements(instance, USED_BY, null, true).stream().forEach(stmt -> {
-					Resource usedBy = (Resource) stmt.getObject();
-					((InferencerConnection) connection).removeInferredStatement(instance, USED_BY, stmt.getObject(),
-							stmt.getContext());
-					if (seen.add(usedBy)) {
-						toUpdate.add(usedBy);
-						propertyCache.invalidate(usedBy);
-
-						ResourceInfo usedByInfo = modelAccess.getResourceInfo(instance);
-						Set<IReference> properties = modelAccess.getPropertiesWithConstraintsOfResource(usedByInfo);
-						for (Resource usedByCtx : instanceInfo.contexts) {
-							for (IReference property : properties) {
-								((InferencerConnection) connection).removeInferredStatement(usedBy,
-										modelAccess.mapProperty(property), null, usedByCtx);
-							}
-						}
-					}
-				});
 			}
 		}
 	}
